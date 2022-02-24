@@ -13,6 +13,7 @@ import edu.wpi.first.wpilibj.motorcontrol.MotorController;
 import edu.wpi.first.wpilibj.motorcontrol.MotorControllerGroup;
 import edu.wpi.first.wpilibj.motorcontrol.PWMSparkMax;
 import edu.wpi.first.wpilibj.motorcontrol.Spark;
+import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import edu.wpi.first.wpilibj2.command.button.Button;
 import edu.wpi.first.wpilibj2.command.button.Trigger;
 
@@ -76,6 +77,8 @@ public class Robot extends TimedRobot {
         boolean releaseClimber = joyE.getRawButton(6);
         boolean windClimber = joyE.getRawButton(5);
 
+        double shooterSpeed = (joyE.getRawAxis(4) / 4) + 0.75; // converts [-1, 1] to [-1/4, 1/4] to [0.5, 1]
+
         // Drivetrain Controls: left and right joysticks
         if (Math.abs(joyL.getY()) > DEADZONE || Math.abs(joyR.getY()) > DEADZONE) {
             robotDrive.tankDrive(joyL.getY() * SPEED_MOD, joyR.getY() * SPEED_MOD);
@@ -100,8 +103,8 @@ public class Robot extends TimedRobot {
         }
 
         // Shooting Motor: controlled by operator's trigger
-        // TODO: set (temporary until limelight) speed controls on joyE
-        shooterMotor.set(spinShooter ? 0.75 : 0);
+        shooterMotor.set(spinShooter ? shooterSpeed : 0);
+        SmartDashboard.putNumber("Shooter Motor Percentage", shooterSpeed);
 
         // Articulating Climber Controls: operator buttons 11 & 7
         // TODO: test bottom articulating climber motor!! add to code
@@ -115,7 +118,6 @@ public class Robot extends TimedRobot {
 
         // Extending Climber Winch Controls: operator buttons 5 & 6
         // TODO: does the winch have enough torque to safely lift the robot?
-        // TODO: even running full power caused issues
         if (windClimber) {
             extendingClimber.set(1);
         } else if (releaseClimber) {
