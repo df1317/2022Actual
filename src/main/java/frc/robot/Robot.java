@@ -42,7 +42,8 @@ public class Robot extends TimedRobot {
     private final WPI_VictorSPX bottomCollectorMotor = new WPI_VictorSPX(10);
     private final WPI_VictorSPX topArticulatingClimber = new WPI_VictorSPX(7);
     private final WPI_VictorSPX bottomArticulatingClimber = new WPI_VictorSPX(11);
-    private final WPI_VictorSPX extendingClimber = new WPI_VictorSPX(4);
+    private final WPI_VictorSPX topExtendingClimber = new WPI_VictorSPX(4); // EXT
+    private final WPI_VictorSPX bottomExtendingClimber = new WPI_VictorSPX(12); // EXT2
     private final WPI_VictorSPX hoodMotor = new WPI_VictorSPX(8);
     private final CANSparkMax shooterMotor = new CANSparkMax(1, MotorType.kBrushless);
 
@@ -62,22 +63,25 @@ public class Robot extends TimedRobot {
     public void teleopPeriodic() {
 
         // Variables
-        boolean initialCollectionL = joyL.getRawButton(TRIGGER);
-        boolean initialCollectionR = joyR.getRawButton(TRIGGER);
-        boolean spinShooter = joyE.getRawButton(TRIGGER);
+        boolean initialCollectionLButton = joyL.getRawButton(TRIGGER);
+        boolean initialCollectionRButton = joyR.getRawButton(TRIGGER);
+        boolean spinShooterButton = joyE.getRawButton(TRIGGER);
 
         boolean ejectButtonL = joyL.getRawButton(THUMBBUTTON);
         boolean ejectButtonR = joyR.getRawButton(THUMBBUTTON);
-        boolean feederCollection = joyE.getRawButton(THUMBBUTTON);
+        boolean feederCollectionButton = joyE.getRawButton(THUMBBUTTON);
 
-        boolean topClimber = joyE.getRawButton(11);
-        boolean topClimberOtherway = joyE.getRawButton(7);
-        boolean bottomClimber = joyE.getRawButton(12);
-        boolean bottomClimberOtherway = joyE.getRawButton(8);
-        boolean releaseClimber = joyE.getRawButton(6);
-        boolean windClimber = joyE.getRawButton(5);
+        boolean articulatingClimberButton = joyE.getRawButton(11);
+        boolean articulatingClimberOtherwayButton = joyE.getRawButton(7);
+        // boolean bottomClimberButton = joyE.getRawButton(12);
+        // boolean bottomClimberOtherwayButton = joyE.getRawButton(8);
+        boolean windClimberButton = joyE.getRawButton(5);
+        boolean unwindClimberButton = joyE.getRawButton(6);
 
         double shooterSpeed = (joyE.getRawAxis(4) / 4) + 0.75; // converts [-1, 1] to [-1/4, 1/4] to [0.5, 1]
+        double collectorSpeed = 0.5;
+        double extendingClimberSpeed = 0.5;
+        double articulatingClimberSpeed = 0.5;
 
         // Drivetrain Controls: left and right joysticks
         if (Math.abs(joyL.getY()) > DEADZONE || Math.abs(joyR.getY()) > DEADZONE) {
@@ -86,45 +90,63 @@ public class Robot extends TimedRobot {
             robotDrive.tankDrive(0, 0);
         }
 
+        // Shooting Motor: controlled by operator's trigger
+        shooterMotor.set(spinShooterButton ? shooterSpeed : 0);
+        SmartDashboard.putNumber("Shooter Motor Percentage", shooterSpeed);
+
         // Collection Controls: driver's trigger + thumb button for intake/ejection,
         // operator's thumb button for feeding to spinning shooter wheel
-        if (initialCollectionL || initialCollectionR) {
-            topCollectorMotor.set(-1);
-            bottomCollectorMotor.set(1);
-        } else if (feederCollection) {
-            topCollectorMotor.set(1);
-            bottomCollectorMotor.set(1);
+        if (initialCollectionLButton || initialCollectionRButton) {
+            topCollectorMotor.set(-collectorSpeed);
+            bottomCollectorMotor.set(collectorSpeed);
+        } else if (feederCollectionButton) {
+            topCollectorMotor.set(collectorSpeed);
+            bottomCollectorMotor.set(collectorSpeed);
         } else if (ejectButtonL || ejectButtonR) {
-            topCollectorMotor.set(-1);
-            bottomCollectorMotor.set(-1);
+            topCollectorMotor.set(-collectorSpeed);
+            bottomCollectorMotor.set(-collectorSpeed);
         } else {
             topCollectorMotor.set(0);
             bottomCollectorMotor.set(0);
         }
 
-        // Shooting Motor: controlled by operator's trigger
-        shooterMotor.set(spinShooter ? shooterSpeed : 0);
-        SmartDashboard.putNumber("Shooter Motor Percentage", shooterSpeed);
-
         // Articulating Climber Controls: operator buttons 11 & 7
-        // TODO: test bottom articulating climber motor!! add to code
-        if (topClimber) {
-            topArticulatingClimber.set(0.5);
-        } else if (topClimberOtherway) {
-            topArticulatingClimber.set(-0.5);
+        if (articulatingClimberButton) {
+            topArticulatingClimber.set(articulatingClimberSpeed);
+        } else if (articulatingClimberOtherwayButton) {
+            topArticulatingClimber.set(-articulatingClimberSpeed);
         } else {
             topArticulatingClimber.set(0);
         }
 
+        /*
+         * if (articulatingClimberButton) {
+         * bottomArticulatingClimber.set(articulatingClimberSpeed);
+         * } else if (articulatingClimberOtherwayButton) {
+         * bottomArticulatingClimber.set(-articulatingClimberSpeed);
+         * } else {
+         * bottomArticulatingClimber.set(0);
+         * }
+         */
+
         // Extending Climber Winch Controls: operator buttons 5 & 6
-        // TODO: does the winch have enough torque to safely lift the robot?
-        if (windClimber) {
-            extendingClimber.set(1);
-        } else if (releaseClimber) {
-            extendingClimber.set(-1);
+        if (windClimberButton) {
+            topExtendingClimber.set(extendingClimberSpeed);
+        } else if (unwindClimberButton) {
+            topExtendingClimber.set(-extendingClimberSpeed);
         } else {
-            extendingClimber.set(0.0);
+            topExtendingClimber.set(0);
         }
+
+        /*
+         * if (windClimberButton) {
+         * bottomExtendingClimber.set(extendingClimberSpeed);
+         * } else if (unwindClimberButton) {
+         * bottomExtendingClimber.set(-extendingClimberSpeed);
+         * } else {
+         * bottomExtendingClimber.set(0);
+         * }
+         */
 
     }
 
