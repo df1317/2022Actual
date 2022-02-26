@@ -8,6 +8,7 @@ import com.ctre.phoenix.motorcontrol.can.WPI_VictorSPX;
 
 import edu.wpi.first.wpilibj.Joystick;
 import edu.wpi.first.wpilibj.TimedRobot;
+import edu.wpi.first.wpilibj.Timer;
 import edu.wpi.first.wpilibj.drive.DifferentialDrive;
 import edu.wpi.first.wpilibj.motorcontrol.MotorController;
 import edu.wpi.first.wpilibj.motorcontrol.MotorControllerGroup;
@@ -44,7 +45,7 @@ public class Robot extends TimedRobot {
     private final WPI_VictorSPX bottomArticulatingClimber = new WPI_VictorSPX(11);
     private final WPI_VictorSPX topExtendingClimber = new WPI_VictorSPX(4); // EXT
     private final WPI_VictorSPX bottomExtendingClimber = new WPI_VictorSPX(12); // EXT2
-    private final WPI_VictorSPX hoodMotor = new WPI_VictorSPX(8);
+    // private final WPI_VictorSPX hoodMotor = new WPI_VictorSPX(8);
     private final CANSparkMax shooterMotor = new CANSparkMax(1, MotorType.kBrushless);
 
     // Motor Controller Groups
@@ -53,6 +54,11 @@ public class Robot extends TimedRobot {
 
     private final DifferentialDrive robotDrive = new DifferentialDrive(leftMotorGroup, rightMotorGroup);
 
+    double firstButtonTime = 0.0;
+    double secondButtonTime = 0.0;
+    double thirdButtonTime = 0.0;
+    double teleopStartTime = 0.0;
+
     @Override
     public void robotInit() {
         leftMotorGroup.setInverted(true);
@@ -60,9 +66,17 @@ public class Robot extends TimedRobot {
     }
 
     @Override
+    public void teleopInit() {
+
+        // How long the robot has been turned on when teleop is first enabled
+        double teleopStartTime = Timer.getFPGATimestamp();
+
+    }
+
+    @Override
     public void teleopPeriodic() {
 
-        // Variables
+        // Buttons
         boolean initialCollectionLButton = joyL.getRawButton(TRIGGER);
         boolean initialCollectionRButton = joyR.getRawButton(TRIGGER);
         boolean spinShooterButton = joyE.getRawButton(TRIGGER);
@@ -71,17 +85,21 @@ public class Robot extends TimedRobot {
         boolean ejectButtonR = joyR.getRawButton(THUMBBUTTON);
         boolean feederCollectionButton = joyE.getRawButton(THUMBBUTTON);
 
-        boolean articulatingClimberButton = joyE.getRawButton(11);
-        boolean articulatingClimberOtherwayButton = joyE.getRawButton(7);
-        // boolean bottomClimberButton = joyE.getRawButton(12);
-        // boolean bottomClimberOtherwayButton = joyE.getRawButton(8);
-        boolean windClimberButton = joyE.getRawButton(5);
-        boolean unwindClimberButton = joyE.getRawButton(6);
+        boolean articulatingClimberButton = joyE.getRawButton(5);
+        boolean articulatingClimberOtherwayButton = joyE.getRawButton(3);
+        boolean windClimberButton = joyE.getRawButton(6);
+        boolean unwindClimberButton = joyE.getRawButton(4);
 
-        double shooterSpeed = (joyE.getRawAxis(4) / 4) + 0.75; // converts [-1, 1] to [-1/4, 1/4] to [0.5, 1]
+        // Automated Climber Buttons, testing only, these button values are bad
+        boolean firstButtonPressed = joyE.getRawButtonPressed(11);
+        boolean secondButtonPressed = joyE.getRawButtonPressed(8);
+        boolean thirdButtonPressed = joyE.getRawButtonPressed(7);
+
+        // Constants
+        double shooterSpeed = (joyE.getRawAxis(3) / 4) + 0.75; // converts [-1, 1] to [-1/4, 1/4] to [0.5, 1]
         double collectorSpeed = 0.5;
-        double extendingClimberSpeed = 0.5;
-        double articulatingClimberSpeed = 0.5;
+        double extendingClimberSpeed = 0.75;
+        double articulatingClimberSpeed = 0.25;
 
         // Drivetrain Controls: left and right joysticks
         if (Math.abs(joyL.getY()) > DEADZONE || Math.abs(joyR.getY()) > DEADZONE) {
@@ -90,7 +108,7 @@ public class Robot extends TimedRobot {
             robotDrive.tankDrive(0, 0);
         }
 
-        // Shooting Motor: controlled by operator's trigger
+        // Shooting Motor: controlled by operator's trigger, speed set by variable flap
         shooterMotor.set(spinShooterButton ? shooterSpeed : 0);
         SmartDashboard.putNumber("Shooter Motor Percentage", shooterSpeed);
 
@@ -110,43 +128,122 @@ public class Robot extends TimedRobot {
             bottomCollectorMotor.set(0);
         }
 
-        // Articulating Climber Controls: operator buttons 11 & 7
-        if (articulatingClimberButton) {
-            topArticulatingClimber.set(articulatingClimberSpeed);
-        } else if (articulatingClimberOtherwayButton) {
-            topArticulatingClimber.set(-articulatingClimberSpeed);
-        } else {
-            topArticulatingClimber.set(0);
-        }
-
+        // Automated Climber Controls: buttons 11, 8, 7
+        // yikes help
         /*
-         * if (articulatingClimberButton) {
-         * bottomArticulatingClimber.set(articulatingClimberSpeed);
-         * } else if (articulatingClimberOtherwayButton) {
-         * bottomArticulatingClimber.set(-articulatingClimberSpeed);
-         * } else {
-         * bottomArticulatingClimber.set(0);
-         * }
+         * Everything is timed to be 1 second apart. Extending arms are lifted slightly
+         * before they are rotated off of a bar.
+         * -ExtendingClimberSpeed = winch pulls up robot
+         * +ExtendingClimberSpeed = releases winch to allow extension of arms
+         * -ArticulatingClimberSpeed = causes clockwise rotation |/
+         * +ArticulatingClimberSpeed = causes counterclockwise rotation \|
          */
-
-        // Extending Climber Winch Controls: operator buttons 5 & 6
-        if (windClimberButton) {
-            topExtendingClimber.set(extendingClimberSpeed);
-        } else if (unwindClimberButton) {
+        if (firstButtonPressed) {
+            // Button 11 is pressed to pull robot up onto bar 1
+            firstButtonTime = Timer.getFPGATimestamp() - teleopStartTime;
             topExtendingClimber.set(-extendingClimberSpeed);
-        } else {
-            topExtendingClimber.set(0);
-        }
+            bottomExtendingClimber.set(-extendingClimberSpeed);
+            topArticulatingClimber.set(0);
+            bottomArticulatingClimber.set(0);
 
-        /*
-         * if (windClimberButton) {
-         * bottomExtendingClimber.set(extendingClimberSpeed);
-         * } else if (unwindClimberButton) {
-         * bottomExtendingClimber.set(-extendingClimberSpeed);
-         * } else {
-         * bottomExtendingClimber.set(0);
-         * }
-         */
+        } else if (firstButtonTime > 2 && secondButtonPressed) {
+            secondButtonTime = Timer.getFPGATimestamp() - teleopStartTime;
+            if (secondButtonTime <= 1) {
+                // Button 8 is pressed to slightly raise extending arms off of bar 1
+                // Articulating arms are rotated to angle towards bar 2
+                topExtendingClimber.set(extendingClimberSpeed * 0.5);
+                bottomExtendingClimber.set(extendingClimberSpeed * 0.5);
+                topArticulatingClimber.set(-articulatingClimberSpeed);
+                bottomArticulatingClimber.set(-articulatingClimberSpeed);
+            } else if (secondButtonTime > 1 && secondButtonTime <= 2) {
+                // After rotating, we extend to reach for bar 2
+                topExtendingClimber.set(extendingClimberSpeed);
+                bottomExtendingClimber.set(extendingClimberSpeed);
+                topArticulatingClimber.set(0);
+                bottomArticulatingClimber.set(0);
+            } else if (secondButtonTime > 3 && secondButtonTime <= 4) {
+                // After reaching towards bar 2, we rotate to allow extending arms to grasp it
+                topExtendingClimber.set(0);
+                bottomExtendingClimber.set(0);
+                topArticulatingClimber.set(articulatingClimberSpeed);
+                bottomArticulatingClimber.set(articulatingClimberSpeed);
+            }
+        } else if (secondButtonTime > 3 && thirdButtonPressed) {
+            thirdButtonTime = Timer.getFPGATimestamp() - teleopStartTime;
+            if (thirdButtonTime < 1) {
+                // Button 7 is pressed to pull robot onto bar 2
+                topExtendingClimber.set(-extendingClimberSpeed);
+                bottomExtendingClimber.set(-extendingClimberSpeed);
+                topArticulatingClimber.set(0);
+                bottomArticulatingClimber.set(0);
+            } else if (thirdButtonTime >= 1 && thirdButtonTime <= 2) {
+                // Extending arms lower a little bit to allow articulating arms to sneak under
+                // Articulating arms are rotated to vertical to allow us to grasp bar 2
+                topExtendingClimber.set(extendingClimberSpeed * 0.5);
+                bottomExtendingClimber.set(extendingClimberSpeed * 0.5);
+                topArticulatingClimber.set(articulatingClimberSpeed);
+                bottomArticulatingClimber.set(articulatingClimberSpeed);
+            } else if (thirdButtonTime > 2 && thirdButtonTime <= 3) {
+                // Extending arms pull articulating arms up onto bar 2
+                topExtendingClimber.set(-extendingClimberSpeed);
+                bottomExtendingClimber.set(-extendingClimberSpeed);
+                topArticulatingClimber.set(0);
+                bottomArticulatingClimber.set(0);
+            } else if (thirdButtonTime > 3 && thirdButtonTime <= 4) {
+                // Extending arms extend slightly so that they can rotate off of bar 2
+                // Articulating arms rotate to angle towards bar 3
+                topExtendingClimber.set(extendingClimberSpeed * 0.5);
+                bottomExtendingClimber.set(extendingClimberSpeed * 0.5);
+                topArticulatingClimber.set(-articulatingClimberSpeed);
+                bottomArticulatingClimber.set(-articulatingClimberSpeed);
+            } else if (thirdButtonTime > 4 && thirdButtonTime <= 5) {
+                // Extending arms reach to bar 3
+                topExtendingClimber.set(extendingClimberSpeed);
+                bottomExtendingClimber.set(extendingClimberSpeed);
+                topArticulatingClimber.set(0);
+                bottomExtendingClimber.set(0);
+            } else if (thirdButtonTime > 5 && thirdButtonTime <= 6) {
+                // Articulating arms rotate to allow extending arms to grab bar 3
+                topExtendingClimber.set(0);
+                bottomExtendingClimber.set(0);
+                topArticulatingClimber.set(articulatingClimberSpeed);
+                bottomArticulatingClimber.set(articulatingClimberSpeed);
+            } else if (thirdButtonTime > 6 && thirdButtonTime <= 7) {
+                // Extending arms pull us on to bar 3
+                // Articulating arms slowly rotate off of bar 2 to rest against bar 3
+                // (so we don't get points deducted for touching bar 2)
+                topExtendingClimber.set(-extendingClimberSpeed);
+                bottomExtendingClimber.set(-extendingClimberSpeed);
+                topArticulatingClimber.set(articulatingClimberSpeed * 0.5);
+                bottomArticulatingClimber.set(articulatingClimberSpeed * 0.5);
+            }
+        } else {
+            // manual time! please use manual please it's great
+            // Articulating Climber Controls [MANUAL]: operator buttons 5 & 3
+            if (articulatingClimberButton) {
+                topArticulatingClimber.set(articulatingClimberSpeed);
+                bottomArticulatingClimber.set(articulatingClimberSpeed);
+            } else if (articulatingClimberOtherwayButton) {
+                topArticulatingClimber.set(-articulatingClimberSpeed);
+                bottomArticulatingClimber.set(-articulatingClimberSpeed);
+            } else {
+                topArticulatingClimber.set(0);
+                bottomArticulatingClimber.set(0);
+            }
+
+            // Extending Climber Winch Controls [MANUAL]: operator buttons 6 & 4
+            if (windClimberButton) {
+                topExtendingClimber.set(extendingClimberSpeed);
+                bottomExtendingClimber.set(extendingClimberSpeed);
+            } else if (unwindClimberButton) {
+                topExtendingClimber.set(-extendingClimberSpeed);
+                bottomExtendingClimber.set(-extendingClimberSpeed);
+            } else {
+                topExtendingClimber.set(0);
+                bottomExtendingClimber.set(0);
+            }
+
+        }
 
     }
 
