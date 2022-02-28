@@ -2,6 +2,23 @@
 // Open Source Software; you can modify and/or share it under the terms of
 // the WPILib BSD license file in the root directory of this project.
 
+/* TODO: 
+remove all old limelight code
+implement new limelight code
+automate climber for real
+    button pressed/released issues?
+    hold button down instead?
+    no time requirement for next stage of climbing?
+    FPGAtimer situation not working? other timing options?
+        look into wpilibj.TImer import for timing options
+        previous robot code
+50% drivetrain speed - halfSpeedButton(L/R)
+clean up code
+clean up imports
+? hood motor set up 
+   ? add to limelight code
+*/
+
 package frc.robot;
 
 import com.ctre.phoenix.motorcontrol.can.WPI_VictorSPX;
@@ -16,18 +33,25 @@ import edu.wpi.first.wpilibj.motorcontrol.PWMSparkMax;
 import edu.wpi.first.wpilibj.motorcontrol.Spark;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import edu.wpi.first.wpilibj2.command.button.Button;
+import edu.wpi.first.wpilibj2.command.button.NetworkButton;
 import edu.wpi.first.wpilibj2.command.button.Trigger;
+import edu.wpi.first.networktables.*;
 
 import com.revrobotics.CANSparkMax;
 import com.revrobotics.CANSparkMaxLowLevel.MotorType;
+import com.revrobotics.SparkMaxRelativeEncoder;
+import com.revrobotics.RelativeEncoder;
+import com.revrobotics.SparkMaxPIDController;
 
 public class Robot extends TimedRobot {
 
     // Constants
     private static final double DEADZONE = 0.1;
-    private static double speedMod = 1;
+    private static final double SPEEDMOD = 1;
     private static final int TRIGGER = 1;
     private static final int THUMBBUTTON = 2;
+    private static final double HATDEADZONE = 0.2;
+    private static final double LIMELIGHTSTEERING = 0.5; // test me
 
     // Joysticks
     private final Joystick joyE = new Joystick(0);
@@ -46,7 +70,8 @@ public class Robot extends TimedRobot {
     private final WPI_VictorSPX topExtendingClimber = new WPI_VictorSPX(4); // EXT
     private final WPI_VictorSPX bottomExtendingClimber = new WPI_VictorSPX(12); // EXT2
     // private final WPI_VictorSPX hoodMotor = new WPI_VictorSPX(8);
-    private final CANSparkMax shooterMotor = new CANSparkMax(1, MotorType.kBrushless);
+    private CANSparkMax shooterMotor;
+    private RelativeEncoder shooterEncoder;
 
     // Motor Controller Groups
     private final MotorControllerGroup leftMotorGroup = new MotorControllerGroup(frontLeftMotor, backLeftMotor);
@@ -64,10 +89,24 @@ public class Robot extends TimedRobot {
     double teleopStartTime = 0.0;
     double robotTimer = Timer.getFPGATimestamp();
 
+    // Limelight
+    private NetworkTable table = NetworkTableInstance.getDefault().getTable("limelight");
+    double tv = NetworkTableInstance.getDefault().getTable("limelight").getEntry("tv").getDouble(0);
+    double tx = NetworkTableInstance.getDefault().getTable("limelight").getEntry("tx").getDouble(0);
+    double ty = NetworkTableInstance.getDefault().getTable("limelight").getEntry("ty").getDouble(0);
+    double ta = NetworkTableInstance.getDefault().getTable("limelight").getEntry("ta").getDouble(0);
+    double kp = -0.1;
+    double limelightMinCommand = 0.05;
+    double limelightAlignButton = Math.abs(joyE.getRawAxis(4)) - HATDEADZONE; // hat axis
+    double limelightLeftSteer = 0.0;
+    double limelightRightSteer = 0.0;
+
     @Override
     public void robotInit() {
         leftMotorGroup.setInverted(true);
         rightMotorGroup.setInverted(false);
+        shooterMotor = new CANSparkMax(1, MotorType.kBrushless);
+        shooterEncoder = shooterMotor.getEncoder();
     }
 
     @Override
@@ -77,6 +116,8 @@ public class Robot extends TimedRobot {
 
     @Override
     public void teleopPeriodic() {
+
+        Update_Limelight_Tracking();
 
         // Buttons
         boolean initialCollectionLButton = joyL.getRawButton(TRIGGER);
@@ -89,30 +130,29 @@ public class Robot extends TimedRobot {
 
         boolean ejectButtonL = joyL.getRawButton(3);
         boolean ejectButtonR = joyR.getRawButton(3);
-
         boolean articulatingClimberButton = joyE.getRawButton(5);
         boolean articulatingClimberOtherwayButton = joyE.getRawButton(3);
         boolean windClimberButton = joyE.getRawButton(4);
         boolean unwindClimberButton = joyE.getRawButton(6);
+        double shooterSpeed = (joyE.getRawAxis(3) / 4) + 0.75; // converts [-1, 1] to [-1/4, 1/4] to [0.5, 1]
 
-        // Automated Climber Buttons, testing only, these button values are bad
+        // Automated Climber Buttons: testing atm
         boolean firstButtonPressed = joyE.getRawButtonPressed(11);
         boolean secondButtonPressed = joyE.getRawButtonPressed(8);
         boolean thirdButtonPressed = joyE.getRawButtonPressed(7);
 
         // Constants
-        double shooterSpeed = (joyE.getRawAxis(3) / 4) + 0.75; // converts [-1, 1] to [-1/4, 1/4] to [0.5, 1]
-        double collectorSpeed = 0.5;
+        double collectorSpeed = 0.75;
         double extendingClimberSpeed = 0.75;
         double articulatingClimberSpeed = 0.25;
 
         // Drivetrain Controls: left and right joysticks
-        if (halfSpeedButtonL || halfSpeedButtonR) {
-            speedMod = speedMod * 0.5;
+        if (limelightAlignButton > 0) {
+            robotDrive.tankDrive(limelightLeftSteer, limelightRightSteer);
         }
 
         if (Math.abs(joyL.getY()) > DEADZONE || Math.abs(joyR.getY()) > DEADZONE) {
-            robotDrive.tankDrive(joyL.getY() * speedMod, joyR.getY() * speedMod);
+            robotDrive.tankDrive(joyL.getY() * SPEEDMOD, joyR.getY() * SPEEDMOD);
         } else {
             robotDrive.tankDrive(0, 0);
         }
@@ -120,6 +160,7 @@ public class Robot extends TimedRobot {
         // Shooting Motor: controlled by operator's trigger, speed set by variable flap
         shooterMotor.set(spinShooterButton ? shooterSpeed : 0);
         SmartDashboard.putNumber("Shooter Motor Percentage", shooterSpeed);
+        SmartDashboard.putNumber("Encoder RPM", shooterEncoder.getVelocity());
 
         // Collection Controls: driver's trigger + thumb button for intake/ejection,
         // operator's thumb button for feeding to spinning shooter wheel
@@ -168,7 +209,7 @@ public class Robot extends TimedRobot {
                 extendingClimbers.set(0);
                 articulatingClimbers.set(articulatingClimberSpeed);
             }
-        } else if (secondButtonTime > 3 && thirdButtonPressed) {
+        } else if (secondButtonTime > 4 && thirdButtonPressed) {
             thirdButtonTime = Timer.getFPGATimestamp() - robotTimer;
             if (thirdButtonTime < 1) {
                 // Button 7 is pressed to pull robot onto bar 2
@@ -225,6 +266,38 @@ public class Robot extends TimedRobot {
 
         }
 
+    }
+
+    public void Update_Limelight_Tracking() {
+        double limelightLeftSteer = 0.0; // ???
+        double limelightRightSteer = 0.0; // ???
+
+        // Limelight Align
+        if (limelightAlignButton > 0) {
+            double limelightHeadingError = -tx;
+            double limelightAlignmentAdjust = 0.0;
+
+            if (tx > 1.0) {
+                limelightAlignmentAdjust = (kp * limelightHeadingError) - limelightMinCommand;
+            } else if (tx < 1.0) {
+                limelightAlignmentAdjust = (kp * limelightHeadingError) + limelightMinCommand;
+            }
+
+            limelightLeftSteer += limelightAlignmentAdjust;
+            limelightRightSteer -= limelightAlignmentAdjust;
+        }
+    }
+
+    // do we need this? call during robotInit?
+    public void configLimelight() {
+        // Forces led on
+        table.getEntry("ledMode").setNumber(3);
+        // Sets limelight's current pipeline to 0
+        table.getEntry("pipeline").setNumber(0);
+        // Sets the mode of the camera to vision processor mode
+        table.getEntry("camMode").setNumber(0);
+        // Defaults Limelight's snapshotting feature to off
+        table.getEntry("snapshot").setNumber(0);
     }
 
 }
