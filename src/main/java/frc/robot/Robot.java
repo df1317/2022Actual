@@ -50,8 +50,11 @@ public class Robot extends TimedRobot {
     private static final double SPEEDMOD = 1;
     private static final int TRIGGER = 1;
     private static final int THUMBBUTTON = 2;
-    private static final double HATDEADZONE = 0.2;
-    private static final double LIMELIGHTSTEERING = 0.5; // test me
+    // private static final double HATDEADZONE = 0.2;
+    // private static final double LIMELIGHTSTEERING = 0.5;
+    private static final double COLLECTORSPEED = 0.75;
+    private static final double EXTCLIMBERSPEED = 0.75;
+    private static final double ARTCLIMBERSPEED = 0.25;
 
     // Joysticks
     private final Joystick joyE = new Joystick(0);
@@ -88,21 +91,20 @@ public class Robot extends TimedRobot {
     double thirdButtonTime = 0.0;
     double teleopStartTime = 0.0;
     double robotTimer = Timer.getFPGATimestamp();
+    boolean limelightSetMotorSpeed = false;
 
     // Limelight
     private NetworkTable table = NetworkTableInstance.getDefault().getTable("limelight");
-    double tv = NetworkTableInstance.getDefault().getTable("limelight").getEntry("tv").getDouble(0);
-    double tx = NetworkTableInstance.getDefault().getTable("limelight").getEntry("tx").getDouble(0);
-    double ty = NetworkTableInstance.getDefault().getTable("limelight").getEntry("ty").getDouble(0);
-    double ta = NetworkTableInstance.getDefault().getTable("limelight").getEntry("ta").getDouble(0);
-    double kp = -0.1;
+    double limelightKP = -0.1;
     double limelightMinCommand = 0.05;
-    double limelightAlignButton = Math.abs(joyE.getRawAxis(4)) - HATDEADZONE; // hat axis
     double limelightLeftSteer = 0.0;
     double limelightRightSteer = 0.0;
 
     @Override
     public void robotInit() {
+
+        configLimelight();
+
         leftMotorGroup.setInverted(true);
         rightMotorGroup.setInverted(false);
         shooterMotor = new CANSparkMax(1, MotorType.kBrushless);
@@ -117,7 +119,15 @@ public class Robot extends TimedRobot {
     @Override
     public void teleopPeriodic() {
 
-        Update_Limelight_Tracking();
+        // Limelight Variables
+        double limelightTV = table.getEntry("tv").getDouble(0);
+        double limelightTA = table.getEntry("ta").getDouble(0);
+        double limelightTX = table.getEntry("tx").getDouble(0);
+        double limelightTY = table.getEntry("ty").getDouble(0);
+        SmartDashboard.putNumber("Valid Target?", limelightTV);
+        SmartDashboard.putNumber("Limelight tx", limelightTX);
+        SmartDashboard.putNumber("Limelight ty", limelightTY);
+        SmartDashboard.putNumber("Limelight ta", limelightTA);
 
         // Buttons
         boolean initialCollectionLButton = joyL.getRawButton(TRIGGER);
@@ -134,20 +144,29 @@ public class Robot extends TimedRobot {
         boolean articulatingClimberOtherwayButton = joyE.getRawButton(3);
         boolean windClimberButton = joyE.getRawButton(4);
         boolean unwindClimberButton = joyE.getRawButton(6);
+        // double limelightAlignButton = Math.abs(joyE.getRawAxis(4)); // hat axis
         double shooterSpeed = (joyE.getRawAxis(3) / 4) + 0.75; // converts [-1, 1] to [-1/4, 1/4] to [0.5, 1]
+        boolean limelightAlignButtonL = joyL.getRawButton(11);
+        boolean limelightAlignButtonR = joyR.getRawButton(11);
+        int hatDirection = joyE.getPOV();
+
+        // Allows limelight to set shooting RPM when hat is being pressed
+        if (hatDirection != -1) {
+            limelightSetMotorSpeed = true;
+        } else {
+            limelightSetMotorSpeed = false;
+        }
 
         // Automated Climber Buttons: testing atm
-        boolean firstButtonPressed = joyE.getRawButtonPressed(11);
-        boolean secondButtonPressed = joyE.getRawButtonPressed(8);
-        boolean thirdButtonPressed = joyE.getRawButtonPressed(7);
+        boolean firstButtonPressed = joyE.getRawButton(11);
+        boolean secondButtonPressed = joyE.getRawButton(8);
+        boolean thirdButtonPressed = joyE.getRawButton(7);
 
-        // Constants
-        double collectorSpeed = 0.75;
-        double extendingClimberSpeed = 0.75;
-        double articulatingClimberSpeed = 0.25;
+        limelightSteeringAlign(limelightAlignButtonL, limelightAlignButtonR, limelightTX);
+        calculateLimelightDistance(limelightTY);
 
         // Drivetrain Controls: left and right joysticks
-        if (limelightAlignButton > 0) {
+        if (limelightAlignButtonR || limelightAlignButtonL) {
             robotDrive.tankDrive(limelightLeftSteer, limelightRightSteer);
         }
 
@@ -158,6 +177,12 @@ public class Robot extends TimedRobot {
         }
 
         // Shooting Motor: controlled by operator's trigger, speed set by variable flap
+        // TODO: Use known distance and RPM values to create math function to set speed
+        if (limelightSetMotorSpeed) {
+            // does this set shooter speed = distance? since method should return distance
+            shooterSpeed = calculateLimelightDistance(limelightTY);
+        }
+
         shooterMotor.set(spinShooterButton ? shooterSpeed : 0);
         SmartDashboard.putNumber("Shooter Motor Percentage", shooterSpeed);
         SmartDashboard.putNumber("Encoder RPM", shooterEncoder.getVelocity());
@@ -165,14 +190,14 @@ public class Robot extends TimedRobot {
         // Collection Controls: driver's trigger + thumb button for intake/ejection,
         // operator's thumb button for feeding to spinning shooter wheel
         if (initialCollectionLButton || initialCollectionRButton) {
-            topCollectorMotor.set(-collectorSpeed);
-            bottomCollectorMotor.set(collectorSpeed);
+            topCollectorMotor.set(-COLLECTORSPEED);
+            bottomCollectorMotor.set(COLLECTORSPEED);
         } else if (feederCollectionButton) {
-            topCollectorMotor.set(collectorSpeed);
-            bottomCollectorMotor.set(collectorSpeed);
+            topCollectorMotor.set(COLLECTORSPEED);
+            bottomCollectorMotor.set(COLLECTORSPEED);
         } else if (ejectButtonL || ejectButtonR) {
-            topCollectorMotor.set(-collectorSpeed);
-            bottomCollectorMotor.set(-collectorSpeed);
+            topCollectorMotor.set(-COLLECTORSPEED);
+            bottomCollectorMotor.set(-COLLECTORSPEED);
         } else {
             topCollectorMotor.set(0);
             bottomCollectorMotor.set(0);
@@ -190,7 +215,7 @@ public class Robot extends TimedRobot {
         if (firstButtonPressed) {
             // Button 11 is pressed to pull robot up onto bar 1
             firstButtonTime = Timer.getFPGATimestamp() - robotTimer;
-            extendingClimbers.set(-extendingClimberSpeed);
+            extendingClimbers.set(-EXTCLIMBERSPEED);
             articulatingClimbers.set(0);
 
         } else if (firstButtonTime > 2 && secondButtonPressed) {
@@ -198,68 +223,77 @@ public class Robot extends TimedRobot {
             if (secondButtonTime <= 1) {
                 // Button 8 is pressed to slightly raise extending arms off of bar 1
                 // Articulating arms are rotated to angle towards bar 2
-                extendingClimbers.set(extendingClimberSpeed * 0.5);
-                articulatingClimbers.set(-articulatingClimberSpeed);
+                extendingClimbers.set(EXTCLIMBERSPEED * 0.5);
+                articulatingClimbers.set(-ARTCLIMBERSPEED);
             } else if (secondButtonTime > 1 && secondButtonTime <= 2) {
                 // After rotating, we extend to reach for bar 2
-                extendingClimbers.set(extendingClimberSpeed);
+                extendingClimbers.set(EXTCLIMBERSPEED);
                 articulatingClimbers.set(0);
             } else if (secondButtonTime > 3 && secondButtonTime <= 4) {
                 // After reaching towards bar 2, we rotate to allow extending arms to grasp it
                 extendingClimbers.set(0);
-                articulatingClimbers.set(articulatingClimberSpeed);
+                articulatingClimbers.set(ARTCLIMBERSPEED);
             }
         } else if (secondButtonTime > 4 && thirdButtonPressed) {
             thirdButtonTime = Timer.getFPGATimestamp() - robotTimer;
+
+            switch ((int) Math.floor(thirdButtonTime)) {
+                case 0:
+                    // Button 7 is pressed to pull robot onto bar 2
+                    extendingClimbers.set(-EXTCLIMBERSPEED);
+                    articulatingClimbers.set(0);
+                    break;
+                default:
+                    break;
+
+            }
+
             if (thirdButtonTime < 1) {
-                // Button 7 is pressed to pull robot onto bar 2
-                extendingClimbers.set(-extendingClimberSpeed);
-                articulatingClimbers.set(0);
             } else if (thirdButtonTime >= 1 && thirdButtonTime <= 2) {
                 // Extending arms lower a little bit to allow articulating arms to sneak under
                 // Articulating arms are rotated to vertical to allow us to grasp bar 2
-                extendingClimbers.set(extendingClimberSpeed * 0.5);
-                articulatingClimbers.set(articulatingClimberSpeed);
+                extendingClimbers.set(EXTCLIMBERSPEED * 0.5);
+                articulatingClimbers.set(ARTCLIMBERSPEED);
             } else if (thirdButtonTime > 2 && thirdButtonTime <= 3) {
                 // Extending arms pull articulating arms up onto bar 2
-                extendingClimbers.set(-extendingClimberSpeed);
+                extendingClimbers.set(-EXTCLIMBERSPEED);
                 articulatingClimbers.set(0);
             } else if (thirdButtonTime > 3 && thirdButtonTime <= 4) {
                 // Extending arms extend slightly so that they can rotate off of bar 2
                 // Articulating arms rotate to angle towards bar 3
-                extendingClimbers.set(extendingClimberSpeed * 0.5);
-                articulatingClimbers.set(-articulatingClimberSpeed);
+                extendingClimbers.set(EXTCLIMBERSPEED * 0.5);
+                articulatingClimbers.set(-ARTCLIMBERSPEED);
             } else if (thirdButtonTime > 4 && thirdButtonTime <= 5) {
                 // Extending arms reach to bar 3
-                extendingClimbers.set(extendingClimberSpeed);
+                extendingClimbers.set(EXTCLIMBERSPEED);
                 articulatingClimbers.set(0);
             } else if (thirdButtonTime > 5 && thirdButtonTime <= 6) {
                 // Articulating arms rotate to allow extending arms to grab bar 3
                 extendingClimbers.set(0);
-                articulatingClimbers.set(articulatingClimberSpeed);
+                articulatingClimbers.set(ARTCLIMBERSPEED);
             } else if (thirdButtonTime > 6 && thirdButtonTime <= 7) {
                 // Extending arms pull us on to bar 3
                 // Articulating arms slowly rotate off of bar 2 to rest against bar 3
                 // (so we don't get points deducted for touching bar 2)
-                extendingClimbers.set(-extendingClimberSpeed);
-                articulatingClimbers.set(articulatingClimberSpeed * 0.5);
+                extendingClimbers.set(-EXTCLIMBERSPEED);
+                articulatingClimbers.set(ARTCLIMBERSPEED * 0.5);
             }
         } else {
             // manual time! please use manual please it's great
             // Articulating Climber Controls [MANUAL]: operator buttons 5 & 3
             if (articulatingClimberButton) {
-                articulatingClimbers.set(articulatingClimberSpeed);
+                articulatingClimbers.set(ARTCLIMBERSPEED);
             } else if (articulatingClimberOtherwayButton) {
-                articulatingClimbers.set(-articulatingClimberSpeed);
+                articulatingClimbers.set(-ARTCLIMBERSPEED);
             } else {
                 articulatingClimbers.set(0);
             }
 
             // Extending Climber Winch Controls [MANUAL]: operator buttons 6 & 4
             if (windClimberButton) {
-                extendingClimbers.set(extendingClimberSpeed);
+                extendingClimbers.set(EXTCLIMBERSPEED);
             } else if (unwindClimberButton) {
-                extendingClimbers.set(-extendingClimberSpeed);
+                extendingClimbers.set(-EXTCLIMBERSPEED);
             } else {
                 extendingClimbers.set(0);
             }
@@ -268,27 +302,42 @@ public class Robot extends TimedRobot {
 
     }
 
-    public void Update_Limelight_Tracking() {
-        double limelightLeftSteer = 0.0; // ???
-        double limelightRightSteer = 0.0; // ???
+    public void limelightSteeringAlign(boolean limelightAlignButtonL, boolean limelightAlignButtonR,
+            double limelightTX) {
+        limelightLeftSteer = 0.0;
+        limelightRightSteer = 0.0;
 
         // Limelight Align
-        if (limelightAlignButton > 0) {
-            double limelightHeadingError = -tx;
-            double limelightAlignmentAdjust = 0.0;
+        // don't we need this to work only if we have a valid target? limelightTV = 1?
+        if (!limelightAlignButtonL || !limelightAlignButtonR)
+            return;
+        double limelightHeadingError = -limelightTX;
+        double limelightAlignmentAdjust = 0.0;
 
-            if (tx > 1.0) {
-                limelightAlignmentAdjust = (kp * limelightHeadingError) - limelightMinCommand;
-            } else if (tx < 1.0) {
-                limelightAlignmentAdjust = (kp * limelightHeadingError) + limelightMinCommand;
-            }
-
-            limelightLeftSteer += limelightAlignmentAdjust;
-            limelightRightSteer -= limelightAlignmentAdjust;
+        if (limelightTX > 1.0) {
+            limelightAlignmentAdjust = (limelightKP * limelightHeadingError) - limelightMinCommand;
+        } else if (limelightTX < 1.0) {
+            limelightAlignmentAdjust = (limelightKP * limelightHeadingError) + limelightMinCommand;
         }
+
+        limelightLeftSteer += limelightAlignmentAdjust;
+        limelightRightSteer -= limelightAlignmentAdjust;
+
     }
 
-    // do we need this? call during robotInit?
+    public double calculateLimelightDistance(double limelightTY) {
+        final double limelightMountingHeight = 0.0; // inches
+        final double limelightMountingAngle = 23; // degrees rotated back from vertical apparently
+        final double limelightTargetHeight = 8; // inches
+        double limelightDistance = 0.0;
+
+        double limelightTotalAngle = Math.toRadians(limelightMountingAngle + limelightTY);
+
+        // Limelight distance from target in inches
+        limelightDistance = (limelightTargetHeight - limelightMountingHeight) / Math.atan(limelightTotalAngle);
+        return limelightDistance;
+    }
+
     public void configLimelight() {
         // Forces led on
         table.getEntry("ledMode").setNumber(3);
