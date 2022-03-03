@@ -3,7 +3,6 @@
 // the WPILib BSD license file in the root directory of this project.
 
 /* TODO: 
-remove all old limelight code
 implement new limelight code
 automate climber for real
     button pressed/released issues?
@@ -14,7 +13,6 @@ automate climber for real
         previous robot code
 50% drivetrain speed - halfSpeedButton(L/R)
 clean up code
-clean up imports
 ? hood motor set up 
    ? add to limelight code
 */
@@ -212,6 +210,7 @@ public class Robot extends TimedRobot {
          * -ArticulatingClimberSpeed = causes clockwise rotation |/
          * +ArticulatingClimberSpeed = causes counterclockwise rotation \|
          */
+
         if (firstButtonPressed) {
             // Button 11 is pressed to pull robot up onto bar 1
             firstButtonTime = Timer.getFPGATimestamp() - robotTimer;
@@ -243,61 +242,69 @@ public class Robot extends TimedRobot {
                     extendingClimbers.set(-EXTCLIMBERSPEED);
                     articulatingClimbers.set(0);
                     break;
+                case 1:
+                    // Extending arms lower a little bit to allow articulating arms to sneak under
+                    // Articulating arms are rotated to vertical to allow us to grasp bar 2
+                    extendingClimbers.set(EXTCLIMBERSPEED * 0.5);
+                    articulatingClimbers.set(ARTCLIMBERSPEED);
+                    break;
+                case 2:
+                    // Extending arms pull articulating arms up onto bar 2
+                    extendingClimbers.set(-EXTCLIMBERSPEED);
+                    articulatingClimbers.set(0);
+                    break;
+                case 3:
+                    // Extending arms extend slightly so that they can rotate off of bar 2
+                    // Articulating arms rotate to angle towards bar 3
+                    extendingClimbers.set(EXTCLIMBERSPEED * 0.5);
+                    articulatingClimbers.set(-ARTCLIMBERSPEED);
+                    break;
                 default:
                     break;
 
             }
 
-            if (thirdButtonTime < 1) {
-            } else if (thirdButtonTime >= 1 && thirdButtonTime <= 2) {
-                // Extending arms lower a little bit to allow articulating arms to sneak under
-                // Articulating arms are rotated to vertical to allow us to grasp bar 2
-                extendingClimbers.set(EXTCLIMBERSPEED * 0.5);
-                articulatingClimbers.set(ARTCLIMBERSPEED);
-            } else if (thirdButtonTime > 2 && thirdButtonTime <= 3) {
-                // Extending arms pull articulating arms up onto bar 2
-                extendingClimbers.set(-EXTCLIMBERSPEED);
-                articulatingClimbers.set(0);
-            } else if (thirdButtonTime > 3 && thirdButtonTime <= 4) {
-                // Extending arms extend slightly so that they can rotate off of bar 2
-                // Articulating arms rotate to angle towards bar 3
-                extendingClimbers.set(EXTCLIMBERSPEED * 0.5);
-                articulatingClimbers.set(-ARTCLIMBERSPEED);
-            } else if (thirdButtonTime > 4 && thirdButtonTime <= 5) {
-                // Extending arms reach to bar 3
-                extendingClimbers.set(EXTCLIMBERSPEED);
-                articulatingClimbers.set(0);
-            } else if (thirdButtonTime > 5 && thirdButtonTime <= 6) {
-                // Articulating arms rotate to allow extending arms to grab bar 3
-                extendingClimbers.set(0);
-                articulatingClimbers.set(ARTCLIMBERSPEED);
-            } else if (thirdButtonTime > 6 && thirdButtonTime <= 7) {
-                // Extending arms pull us on to bar 3
-                // Articulating arms slowly rotate off of bar 2 to rest against bar 3
-                // (so we don't get points deducted for touching bar 2)
-                extendingClimbers.set(-EXTCLIMBERSPEED);
-                articulatingClimbers.set(ARTCLIMBERSPEED * 0.5);
-            }
+        } else if (thirdButtonTime > 3 && thirdButtonTime <= 4) {
+            // Extending arms extend slightly so that they can rotate off of bar 2
+            // Articulating arms rotate to angle towards bar 3
+            extendingClimbers.set(EXTCLIMBERSPEED * 0.5);
+            articulatingClimbers.set(-ARTCLIMBERSPEED);
+        } else if (thirdButtonTime > 4 && thirdButtonTime <= 5) {
+            // Extending arms reach to bar 3
+            extendingClimbers.set(EXTCLIMBERSPEED);
+            articulatingClimbers.set(0);
+        } else if (thirdButtonTime > 5 && thirdButtonTime <= 6) {
+            // Articulating arms rotate to allow extending arms to grab bar 3
+            extendingClimbers.set(0);
+            articulatingClimbers.set(ARTCLIMBERSPEED);
+        } else if (thirdButtonTime > 6 && thirdButtonTime <= 7) {
+            // Extending arms pull us on to bar 3
+            // Articulating arms slowly rotate off of bar 2 to rest against bar 3
+            // (so we don't get points deducted for touching bar 2)
+            extendingClimbers.set(-EXTCLIMBERSPEED);
+            articulatingClimbers.set(ARTCLIMBERSPEED * 0.5);
         } else {
-            // manual time! please use manual please it's great
-            // Articulating Climber Controls [MANUAL]: operator buttons 5 & 3
-            if (articulatingClimberButton) {
-                articulatingClimbers.set(ARTCLIMBERSPEED);
-            } else if (articulatingClimberOtherwayButton) {
-                articulatingClimbers.set(-ARTCLIMBERSPEED);
-            } else {
-                articulatingClimbers.set(0);
-            }
+            extendingClimbers.set(0);
+            articulatingClimbers.set(0);
+        }
 
-            // Extending Climber Winch Controls [MANUAL]: operator buttons 6 & 4
-            if (windClimberButton) {
-                extendingClimbers.set(EXTCLIMBERSPEED);
-            } else if (unwindClimberButton) {
-                extendingClimbers.set(-EXTCLIMBERSPEED);
-            } else {
-                extendingClimbers.set(0);
-            }
+        // manual time! please use manual please it's great
+        // Articulating Climber Controls [MANUAL]: operator buttons 5 & 3
+        if (articulatingClimberButton) {
+            articulatingClimbers.set(ARTCLIMBERSPEED);
+        } else if (articulatingClimberOtherwayButton) {
+            articulatingClimbers.set(-ARTCLIMBERSPEED);
+        } else {
+            articulatingClimbers.set(0);
+        }
 
+        // Extending Climber Winch Controls [MANUAL]: operator buttons 6 & 4
+        if (windClimberButton) {
+            extendingClimbers.set(EXTCLIMBERSPEED);
+        } else if (unwindClimberButton) {
+            extendingClimbers.set(-EXTCLIMBERSPEED);
+        } else {
+            extendingClimbers.set(0);
         }
 
     }
