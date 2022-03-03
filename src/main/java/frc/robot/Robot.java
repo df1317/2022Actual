@@ -94,7 +94,7 @@ public class Robot extends TimedRobot {
     // Limelight
     private NetworkTable table = NetworkTableInstance.getDefault().getTable("limelight");
     double limelightKP = -0.1;
-    double limelightMinCommand = 0.05;
+    double limelightMinCommand = 0.2;
     double limelightLeftSteer = 0.0;
     double limelightRightSteer = 0.0;
 
@@ -165,6 +165,8 @@ public class Robot extends TimedRobot {
 
         // Drivetrain Controls: left and right joysticks
         if (limelightAlignButtonR || limelightAlignButtonL) {
+            limelightSteeringAlign(limelightAlignButtonL, limelightAlignButtonR, limelightTX);
+            SmartDashboard.putBoolean("LimelightAlign?", limelightAlignButtonL || limelightAlignButtonR);
             robotDrive.tankDrive(limelightLeftSteer, limelightRightSteer);
         }
 
@@ -329,6 +331,10 @@ public class Robot extends TimedRobot {
 
         limelightLeftSteer += limelightAlignmentAdjust;
         limelightRightSteer -= limelightAlignmentAdjust;
+
+        // Testing Only
+        SmartDashboard.putNumber("LimelightLeftSteer", limelightLeftSteer);
+        SmartDashboard.putNumber("LimelightRightSteer", limelightRightSteer);
 
     }
 
