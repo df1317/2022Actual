@@ -45,14 +45,9 @@ public class Robot extends TimedRobot {
 
     // Constants
     private static final double DEADZONE = 0.1;
-    private static final double SPEEDMOD = 1;
+    private static final double SPEED_MOD = 1;
     private static final int TRIGGER = 1;
     private static final int THUMBBUTTON = 2;
-    // private static final double HATDEADZONE = 0.2;
-    // private static final double LIMELIGHTSTEERING = 0.5;
-    private static final double COLLECTORSPEED = 0.75;
-    private static final double EXTCLIMBERSPEED = 0.75;
-    private static final double ARTCLIMBERSPEED = 0.25;
 
     // Joysticks
     private final Joystick joyE = new Joystick(0);
@@ -70,26 +65,18 @@ public class Robot extends TimedRobot {
     private final WPI_VictorSPX bottomArticulatingClimber = new WPI_VictorSPX(11);
     private final WPI_VictorSPX topExtendingClimber = new WPI_VictorSPX(4); // EXT
     private final WPI_VictorSPX bottomExtendingClimber = new WPI_VictorSPX(12); // EXT2
-    // private final WPI_VictorSPX hoodMotor = new WPI_VictorSPX(8);
-    private CANSparkMax shooterMotor;
-    private RelativeEncoder shooterEncoder;
+    private final WPI_VictorSPX hoodMotor = new WPI_VictorSPX(8);
+    private final CANSparkMax shooterMotor = new CANSparkMax(1, MotorType.kBrushless);
+    private final RelativeEncoder shooterRPM = shooterMotor.getEncoder();
 
     // Motor Controller Groups
     private final MotorControllerGroup leftMotorGroup = new MotorControllerGroup(frontLeftMotor, backLeftMotor);
     private final MotorControllerGroup rightMotorGroup = new MotorControllerGroup(frontRightMotor, backRightMotor);
+    private final DifferentialDrive robotDrive = new DifferentialDrive(leftMotorGroup, rightMotorGroup);
     private final MotorControllerGroup extendingClimbers = new MotorControllerGroup(topExtendingClimber,
             bottomExtendingClimber);
     private final MotorControllerGroup articulatingClimbers = new MotorControllerGroup(topArticulatingClimber,
             bottomArticulatingClimber);
-
-    private final DifferentialDrive robotDrive = new DifferentialDrive(leftMotorGroup, rightMotorGroup);
-
-    double firstButtonTime = 0.0;
-    double secondButtonTime = 0.0;
-    double thirdButtonTime = 0.0;
-    double teleopStartTime = 0.0;
-    double robotTimer = Timer.getFPGATimestamp();
-    boolean limelightSetMotorSpeed = false;
 
     // Limelight
     private NetworkTable table = NetworkTableInstance.getDefault().getTable("limelight");
@@ -98,24 +85,61 @@ public class Robot extends TimedRobot {
     double limelightLeftSteer = 0.0;
     double limelightRightSteer = 0.0;
 
+    double firstButtonTime = 0.0;
+    double secondButtonTime = 0.0;
+    double thirdButtonTime = 0.0;
+    double teleopStartTime = 0.0;
+
     @Override
     public void robotInit() {
-
-        configLimelight();
-
         leftMotorGroup.setInverted(true);
         rightMotorGroup.setInverted(false);
-        shooterMotor = new CANSparkMax(1, MotorType.kBrushless);
-        shooterEncoder = shooterMotor.getEncoder();
     }
 
     @Override
     public void teleopInit() {
 
+        // How long the robot has been turned on when teleop is first enabled
+        double teleopStartTime = Timer.getFPGATimestamp();
+
     }
 
     @Override
     public void teleopPeriodic() {
+
+        // Buttons
+        boolean initialCollectionLButton = joyL.getRawButton(THUMBBUTTON);
+        boolean initialCollectionRButton = joyR.getRawButton(THUMBBUTTON);
+        boolean spinShooterButton = joyE.getRawButton(TRIGGER);
+
+        boolean halfsiesL = joyL.getRawButton(TRIGGER);
+        boolean halfsiesR = joyR.getRawButton(TRIGGER);
+        boolean feederCollectionButton = joyE.getRawButton(THUMBBUTTON);
+
+        boolean hoodAdjustForward = joyE.getRawButton(12);
+        boolean hoodAdjustBackward = joyE.getRawButton(10);
+
+        boolean ejectButtonL = joyL.getRawButton(3);
+        boolean ejectButtonR = joyR.getRawButton(3);
+
+        boolean limelightAlignButtonL = joyL.getRawButton(11);
+        boolean limelightAlignButtonR = joyR.getRawButton(11);
+
+        boolean articulatingClimberButton = joyE.getRawButton(5);
+        boolean articulatingClimberOtherwayButton = joyE.getRawButton(3);
+        boolean windClimberButton = joyE.getRawButton(6);
+        boolean unwindClimberButton = joyE.getRawButton(4);
+
+        // Automated Climber Buttons, testing only, these button values are bad
+        boolean firstButtonPressed = joyE.getRawButtonPressed(11);
+        boolean secondButtonPressed = joyE.getRawButtonPressed(8);
+        boolean thirdButtonPressed = joyE.getRawButtonPressed(7);
+
+        // Constants
+        double shooterSpeed = (joyE.getRawAxis(3) / 4) + 0.75; // converts [-1, 1] to [-1/4, 1/4] to [0.5, 1]
+        double collectorSpeed = 0.5;
+        double extendingClimberSpeed = 0.75;
+        double articulatingClimberSpeed = 0.25;
 
         // Limelight Variables
         double limelightTV = table.getEntry("tv").getDouble(0);
@@ -127,83 +151,56 @@ public class Robot extends TimedRobot {
         SmartDashboard.putNumber("Limelight ty", limelightTY);
         SmartDashboard.putNumber("Limelight ta", limelightTA);
 
-        // Buttons
-        boolean initialCollectionLButton = joyL.getRawButton(TRIGGER);
-        boolean initialCollectionRButton = joyR.getRawButton(TRIGGER);
-        boolean spinShooterButton = joyE.getRawButton(TRIGGER);
-
-        boolean halfSpeedButtonL = joyL.getRawButton(THUMBBUTTON);
-        boolean halfSpeedButtonR = joyR.getRawButton(THUMBBUTTON);
-        boolean feederCollectionButton = joyE.getRawButton(THUMBBUTTON);
-
-        boolean ejectButtonL = joyL.getRawButton(3);
-        boolean ejectButtonR = joyR.getRawButton(3);
-        boolean articulatingClimberButton = joyE.getRawButton(5);
-        boolean articulatingClimberOtherwayButton = joyE.getRawButton(3);
-        boolean windClimberButton = joyE.getRawButton(4);
-        boolean unwindClimberButton = joyE.getRawButton(6);
-        // double limelightAlignButton = Math.abs(joyE.getRawAxis(4)); // hat axis
-        double shooterSpeed = (joyE.getRawAxis(3) / 4) + 0.75; // converts [-1, 1] to [-1/4, 1/4] to [0.5, 1]
-        boolean limelightAlignButtonL = joyL.getRawButton(11);
-        boolean limelightAlignButtonR = joyR.getRawButton(11);
-        int hatDirection = joyE.getPOV();
-
-        // Allows limelight to set shooting RPM when hat is being pressed
-        if (hatDirection != -1) {
-            limelightSetMotorSpeed = true;
+        // Hood Adjustment Manual
+        if (hoodAdjustForward) {
+            hoodMotor.set(0.5);
+        } else if (hoodAdjustBackward) {
+            hoodMotor.set(-0.5);
         } else {
-            limelightSetMotorSpeed = false;
+            hoodMotor.set(0);
         }
-
-        // Automated Climber Buttons: testing atm
-        boolean firstButtonPressed = joyE.getRawButton(11);
-        boolean secondButtonPressed = joyE.getRawButton(8);
-        boolean thirdButtonPressed = joyE.getRawButton(7);
-
-        limelightSteeringAlign(limelightAlignButtonL, limelightAlignButtonR, limelightTX);
-        calculateLimelightDistance(limelightTY);
 
         // Drivetrain Controls: left and right joysticks
-        if (limelightAlignButtonR || limelightAlignButtonL) {
-            limelightSteeringAlign(limelightAlignButtonL, limelightAlignButtonR, limelightTX);
-            SmartDashboard.putBoolean("LimelightAlign?", limelightAlignButtonL || limelightAlignButtonR);
-            robotDrive.tankDrive(limelightLeftSteer, limelightRightSteer);
-        }
-
         if (Math.abs(joyL.getY()) > DEADZONE || Math.abs(joyR.getY()) > DEADZONE) {
-            robotDrive.tankDrive(joyL.getY() * SPEEDMOD, joyR.getY() * SPEEDMOD);
+            if (halfsiesL) {
+                robotDrive.tankDrive(joyL.getY() * SPEED_MOD * 0.5, joyR.getY() * SPEED_MOD);
+            } else if (halfsiesR) {
+                robotDrive.tankDrive(joyL.getY() * SPEED_MOD, joyR.getY() * SPEED_MOD * 0.5);
+            } else {
+                robotDrive.tankDrive(joyL.getY() * SPEED_MOD, joyR.getY() * SPEED_MOD);
+            }
         } else {
             robotDrive.tankDrive(0, 0);
         }
 
-        // Shooting Motor: controlled by operator's trigger, speed set by variable flap
-        // TODO: Use known distance and RPM values to create math function to set speed
-        if (limelightSetMotorSpeed) {
-            // does this set shooter speed = distance? since method should return distance
-            shooterSpeed = calculateLimelightDistance(limelightTY);
+        if (limelightAlignButtonL || limelightAlignButtonR) {
+            limelightSteeringAlign(limelightAlignButtonL, limelightAlignButtonR, limelightTX);
+            robotDrive.tankDrive(limelightLeftSteer, limelightRightSteer);
         }
 
+        // Shooting Motor: controlled by operator's trigger, speed set by variable flap
         shooterMotor.set(spinShooterButton ? shooterSpeed : 0);
         SmartDashboard.putNumber("Shooter Motor Percentage", shooterSpeed);
-        SmartDashboard.putNumber("Encoder RPM", shooterEncoder.getVelocity());
+        SmartDashboard.putNumber("RPM", shooterRPM.getVelocity());
 
         // Collection Controls: driver's trigger + thumb button for intake/ejection,
         // operator's thumb button for feeding to spinning shooter wheel
         if (initialCollectionLButton || initialCollectionRButton) {
-            topCollectorMotor.set(-COLLECTORSPEED);
-            bottomCollectorMotor.set(COLLECTORSPEED);
+            topCollectorMotor.set(-collectorSpeed);
+            bottomCollectorMotor.set(collectorSpeed);
         } else if (feederCollectionButton) {
-            topCollectorMotor.set(COLLECTORSPEED);
-            bottomCollectorMotor.set(COLLECTORSPEED);
+            topCollectorMotor.set(collectorSpeed);
+            bottomCollectorMotor.set(collectorSpeed);
         } else if (ejectButtonL || ejectButtonR) {
-            topCollectorMotor.set(-COLLECTORSPEED);
-            bottomCollectorMotor.set(-COLLECTORSPEED);
+            topCollectorMotor.set(-collectorSpeed);
+            bottomCollectorMotor.set(-collectorSpeed);
         } else {
             topCollectorMotor.set(0);
             bottomCollectorMotor.set(0);
         }
 
         // Automated Climber Controls: buttons 11, 8, 7
+        // yikes help
         /*
          * Everything is timed to be 1 second apart. Extending arms are lifted slightly
          * before they are rotated off of a bar.
@@ -212,101 +209,109 @@ public class Robot extends TimedRobot {
          * -ArticulatingClimberSpeed = causes clockwise rotation |/
          * +ArticulatingClimberSpeed = causes counterclockwise rotation \|
          */
-
         if (firstButtonPressed) {
             // Button 11 is pressed to pull robot up onto bar 1
-            firstButtonTime = Timer.getFPGATimestamp() - robotTimer;
-            extendingClimbers.set(-EXTCLIMBERSPEED);
+            firstButtonTime = Timer.getFPGATimestamp() - teleopStartTime;
+            extendingClimbers.set(-extendingClimberSpeed);
             articulatingClimbers.set(0);
-
         } else if (firstButtonTime > 2 && secondButtonPressed) {
-            secondButtonTime = Timer.getFPGATimestamp() - robotTimer;
+            secondButtonTime = Timer.getFPGATimestamp() - teleopStartTime;
+
             if (secondButtonTime <= 1) {
                 // Button 8 is pressed to slightly raise extending arms off of bar 1
                 // Articulating arms are rotated to angle towards bar 2
-                extendingClimbers.set(EXTCLIMBERSPEED * 0.5);
-                articulatingClimbers.set(-ARTCLIMBERSPEED);
+                topExtendingClimber.set(extendingClimberSpeed * 0.5);
+                bottomExtendingClimber.set(extendingClimberSpeed * 0.5);
+                topArticulatingClimber.set(-articulatingClimberSpeed);
+                bottomArticulatingClimber.set(-articulatingClimberSpeed);
             } else if (secondButtonTime > 1 && secondButtonTime <= 2) {
                 // After rotating, we extend to reach for bar 2
-                extendingClimbers.set(EXTCLIMBERSPEED);
-                articulatingClimbers.set(0);
+                topExtendingClimber.set(extendingClimberSpeed);
+                bottomExtendingClimber.set(extendingClimberSpeed);
+                topArticulatingClimber.set(0);
+                bottomArticulatingClimber.set(0);
             } else if (secondButtonTime > 3 && secondButtonTime <= 4) {
                 // After reaching towards bar 2, we rotate to allow extending arms to grasp it
-                extendingClimbers.set(0);
-                articulatingClimbers.set(ARTCLIMBERSPEED);
+                topExtendingClimber.set(0);
+                bottomExtendingClimber.set(0);
+                topArticulatingClimber.set(articulatingClimberSpeed);
+                bottomArticulatingClimber.set(articulatingClimberSpeed);
             }
-        } else if (secondButtonTime > 4 && thirdButtonPressed) {
-            thirdButtonTime = Timer.getFPGATimestamp() - robotTimer;
-
-            switch ((int) Math.floor(thirdButtonTime)) {
-                case 0:
-                    // Button 7 is pressed to pull robot onto bar 2
-                    extendingClimbers.set(-EXTCLIMBERSPEED);
-                    articulatingClimbers.set(0);
-                    break;
-                case 1:
-                    // Extending arms lower a little bit to allow articulating arms to sneak under
-                    // Articulating arms are rotated to vertical to allow us to grasp bar 2
-                    extendingClimbers.set(EXTCLIMBERSPEED * 0.5);
-                    articulatingClimbers.set(ARTCLIMBERSPEED);
-                    break;
-                case 2:
-                    // Extending arms pull articulating arms up onto bar 2
-                    extendingClimbers.set(-EXTCLIMBERSPEED);
-                    articulatingClimbers.set(0);
-                    break;
-                case 3:
-                    // Extending arms extend slightly so that they can rotate off of bar 2
-                    // Articulating arms rotate to angle towards bar 3
-                    extendingClimbers.set(EXTCLIMBERSPEED * 0.5);
-                    articulatingClimbers.set(-ARTCLIMBERSPEED);
-                    break;
-                default:
-                    break;
-
+        } else if (secondButtonTime > 3 && thirdButtonPressed) {
+            thirdButtonTime = Timer.getFPGATimestamp() - teleopStartTime;
+            if (thirdButtonTime < 1) {
+                // Button 7 is pressed to pull robot onto bar 2
+                topExtendingClimber.set(-extendingClimberSpeed);
+                bottomExtendingClimber.set(-extendingClimberSpeed);
+                topArticulatingClimber.set(0);
+                bottomArticulatingClimber.set(0);
+            } else if (thirdButtonTime >= 1 && thirdButtonTime <= 2) {
+                // Extending arms lower a little bit to allow articulating arms to sneak under
+                // Articulating arms are rotated to vertical to allow us to grasp bar 2
+                topExtendingClimber.set(extendingClimberSpeed * 0.5);
+                bottomExtendingClimber.set(extendingClimberSpeed * 0.5);
+                topArticulatingClimber.set(articulatingClimberSpeed);
+                bottomArticulatingClimber.set(articulatingClimberSpeed);
+            } else if (thirdButtonTime > 2 && thirdButtonTime <= 3) {
+                // Extending arms pull articulating arms up onto bar 2
+                topExtendingClimber.set(-extendingClimberSpeed);
+                bottomExtendingClimber.set(-extendingClimberSpeed);
+                topArticulatingClimber.set(0);
+                bottomArticulatingClimber.set(0);
+            } else if (thirdButtonTime > 3 && thirdButtonTime <= 4) {
+                // Extending arms extend slightly so that they can rotate off of bar 2
+                // Articulating arms rotate to angle towards bar 3
+                topExtendingClimber.set(extendingClimberSpeed * 0.5);
+                bottomExtendingClimber.set(extendingClimberSpeed * 0.5);
+                topArticulatingClimber.set(-articulatingClimberSpeed);
+                bottomArticulatingClimber.set(-articulatingClimberSpeed);
+            } else if (thirdButtonTime > 4 && thirdButtonTime <= 5) {
+                // Extending arms reach to bar 3
+                topExtendingClimber.set(extendingClimberSpeed);
+                bottomExtendingClimber.set(extendingClimberSpeed);
+                topArticulatingClimber.set(0);
+                bottomExtendingClimber.set(0);
+            } else if (thirdButtonTime > 5 && thirdButtonTime <= 6) {
+                // Articulating arms rotate to allow extending arms to grab bar 3
+                topExtendingClimber.set(0);
+                bottomExtendingClimber.set(0);
+                topArticulatingClimber.set(articulatingClimberSpeed);
+                bottomArticulatingClimber.set(articulatingClimberSpeed);
+            } else if (thirdButtonTime > 6 && thirdButtonTime <= 7) {
+                // Extending arms pull us on to bar 3
+                // Articulating arms slowly rotate off of bar 2 to rest against bar 3
+                // (so we don't get points deducted for touching bar 2)
+                topExtendingClimber.set(-extendingClimberSpeed);
+                bottomExtendingClimber.set(-extendingClimberSpeed);
+                topArticulatingClimber.set(articulatingClimberSpeed * 0.5);
+                bottomArticulatingClimber.set(articulatingClimberSpeed * 0.5);
+            }
+        } else {
+            // manual time! please use manual please it's great
+            // Articulating Climber Controls [MANUAL]: operator buttons 5 & 3
+            if (articulatingClimberButton) {
+                topArticulatingClimber.set(articulatingClimberSpeed);
+                bottomArticulatingClimber.set(articulatingClimberSpeed);
+            } else if (articulatingClimberOtherwayButton) {
+                topArticulatingClimber.set(-articulatingClimberSpeed);
+                bottomArticulatingClimber.set(-articulatingClimberSpeed);
+            } else {
+                topArticulatingClimber.set(0);
+                bottomArticulatingClimber.set(0);
             }
 
-        } else if (thirdButtonTime > 3 && thirdButtonTime <= 4) {
-            // Extending arms extend slightly so that they can rotate off of bar 2
-            // Articulating arms rotate to angle towards bar 3
-            extendingClimbers.set(EXTCLIMBERSPEED * 0.5);
-            articulatingClimbers.set(-ARTCLIMBERSPEED);
-        } else if (thirdButtonTime > 4 && thirdButtonTime <= 5) {
-            // Extending arms reach to bar 3
-            extendingClimbers.set(EXTCLIMBERSPEED);
-            articulatingClimbers.set(0);
-        } else if (thirdButtonTime > 5 && thirdButtonTime <= 6) {
-            // Articulating arms rotate to allow extending arms to grab bar 3
-            extendingClimbers.set(0);
-            articulatingClimbers.set(ARTCLIMBERSPEED);
-        } else if (thirdButtonTime > 6 && thirdButtonTime <= 7) {
-            // Extending arms pull us on to bar 3
-            // Articulating arms slowly rotate off of bar 2 to rest against bar 3
-            // (so we don't get points deducted for touching bar 2)
-            extendingClimbers.set(-EXTCLIMBERSPEED);
-            articulatingClimbers.set(ARTCLIMBERSPEED * 0.5);
-        } else {
-            extendingClimbers.set(0);
-            articulatingClimbers.set(0);
-        }
+            // Extending Climber Winch Controls [MANUAL]: operator buttons 6 & 4
+            if (windClimberButton) {
+                topExtendingClimber.set(extendingClimberSpeed);
+                bottomExtendingClimber.set(extendingClimberSpeed);
+            } else if (unwindClimberButton) {
+                topExtendingClimber.set(-extendingClimberSpeed);
+                bottomExtendingClimber.set(-extendingClimberSpeed);
+            } else {
+                topExtendingClimber.set(0);
+                bottomExtendingClimber.set(0);
+            }
 
-        // manual time! please use manual please it's great
-        // Articulating Climber Controls [MANUAL]: operator buttons 5 & 3
-        if (articulatingClimberButton) {
-            articulatingClimbers.set(ARTCLIMBERSPEED);
-        } else if (articulatingClimberOtherwayButton) {
-            articulatingClimbers.set(-ARTCLIMBERSPEED);
-        } else {
-            articulatingClimbers.set(0);
-        }
-
-        // Extending Climber Winch Controls [MANUAL]: operator buttons 6 & 4
-        if (windClimberButton) {
-            extendingClimbers.set(EXTCLIMBERSPEED);
-        } else if (unwindClimberButton) {
-            extendingClimbers.set(-EXTCLIMBERSPEED);
-        } else {
-            extendingClimbers.set(0);
         }
 
     }
