@@ -21,6 +21,7 @@ package frc.robot;
 
 import com.ctre.phoenix.motorcontrol.can.WPI_VictorSPX;
 
+import edu.wpi.first.wpilibj.Encoder;
 import edu.wpi.first.wpilibj.Joystick;
 import edu.wpi.first.wpilibj.TimedRobot;
 import edu.wpi.first.wpilibj.Timer;
@@ -53,6 +54,9 @@ public class Robot extends TimedRobot {
     private static final double CLOSEDISTANCE = 114;
     private static final double MIDDISTANCE = 174;
     private static final double FARDISTANCE = 228;
+    private static final int SET_CLOSE_ANGLE = 1;
+    private static final int SET_MID_ANGLE = 2;
+    private static final int SET_FAR_ANGLE = 3;
 
     // PID Coefficients
     private static final double PID_P = 6e-5;
@@ -80,9 +84,12 @@ public class Robot extends TimedRobot {
     private final WPI_VictorSPX bottomArticulatingClimber = new WPI_VictorSPX(11);
     private final WPI_VictorSPX topExtendingClimber = new WPI_VictorSPX(4); // EXT
     private final WPI_VictorSPX bottomExtendingClimber = new WPI_VictorSPX(12); // EXT2
+
     private final WPI_VictorSPX hoodMotor = new WPI_VictorSPX(8);
+    private final Encoder hoodEncoder = new Encoder(0, 0);
+
     private final CANSparkMax shooterMotor = new CANSparkMax(1, MotorType.kBrushless);
-    private final RelativeEncoder shooterRPM = shooterMotor.getEncoder();
+    private final RelativeEncoder shooterEncoder = shooterMotor.getEncoder();
     private final SparkMaxPIDController shooterPID = shooterMotor.getPIDController();
 
     // Motor Controller Groups
@@ -101,6 +108,7 @@ public class Robot extends TimedRobot {
     double limelightLeftSteer = 0.0;
     double limelightRightSteer = 0.0;
     double limelightShootingRPM = 0.0;
+    int currentHoodAngle = SET_MID_ANGLE;
 
     // Climber: obsolete
     double firstButtonTime = 0.0;
@@ -167,7 +175,7 @@ public class Robot extends TimedRobot {
         // Limelight Buttons
         boolean limelightAlignButtonL = joyL.getTop();
         boolean limelightAlignButtonR = joyR.getTop();
-        boolean limelightShoot = joyE.getTop();
+        boolean limelightShootButton = joyE.getTop();
 
         // Manual Climber Buttons
         boolean articulatingClimberButton = joyE.getRawButton(5);
@@ -195,10 +203,10 @@ public class Robot extends TimedRobot {
         SmartDashboard.putNumber("Limelight ta", limelightTA);
 
         calculateLimelightDistance(limelightTY);
-        calculateLimelightShootingSpeed(limelightDistance);
+        calculateLimelightRPM(limelightDistance);
+        calculateLimelightHoodAngle(limelightDistance);
 
         // Hood Adjustment Manual
-        // TODO: hood adjustment with limelight distances
         if (hoodAdjustForward) {
             hoodMotor.set(0.5);
         } else if (hoodAdjustBackward) {
@@ -227,9 +235,9 @@ public class Robot extends TimedRobot {
         }
 
         // Shooting Motor Controls
-        if (limelightShoot) {
+        if (limelightShootButton) {
             // Sets shooting motor PID to limelight's calculated RPM value when enabled
-            shooterPID.setReference(calculateLimelightShootingSpeed(limelightDistance),
+            shooterPID.setReference(calculateLimelightRPM(limelightDistance),
                     CANSparkMax.ControlType.kVelocity);
         } else if (spinShooterButton) {
             // Else uses value from operator control
@@ -240,9 +248,9 @@ public class Robot extends TimedRobot {
 
         // SmartDashboard Values for testing
         SmartDashboard.putNumber("Limelight Distance, bumper to target", calculateLimelightDistance(limelightTY));
-        SmartDashboard.putNumber("Limelight RPM Value", calculateLimelightShootingSpeed(limelightDistance));
-        SmartDashboard.putNumber("Actual RPM", shooterRPM.getVelocity());
-        SmartDashboard.putBoolean("Limelight Shooting Enabled?", limelightShoot);
+        SmartDashboard.putNumber("Limelight RPM Value", calculateLimelightRPM(limelightDistance));
+        SmartDashboard.putNumber("Actual RPM", shooterEncoder.getVelocity());
+        SmartDashboard.putBoolean("Limelight Shooting Enabled?", limelightShootButton);
         SmartDashboard.putNumber("Manual %", shooterSpeedManual);
 
         // Collection Controls
@@ -404,11 +412,12 @@ public class Robot extends TimedRobot {
     }
 
     // TODO: set up method for adjust hood according to distance
+    // TODO: find good limelight mounting angle, measure height + bumper distnace
     public double calculateLimelightDistance(double limelightTY) {
         final double limelightMountingHeight = 0.0; // inches
         final double limelightMountingAngle = 23; // degrees rotated back from vertical apparently
-        final double limelightTargetHeight = 8; // inches
-        final double limelightToBumper = 12; // horizontal distance from limelight's camera to outside of bumper
+        final double limelightTargetHeight = 104; // inches
+        final double limelightToBumper = 10; // horizontal distance from limelight's camera to outside of bumper
         double limelightDistance = 0.0;
 
         double limelightTotalAngle = Math.toRadians(limelightMountingAngle + limelightTY);
@@ -419,7 +428,7 @@ public class Robot extends TimedRobot {
         return limelightDistance;
     }
 
-    public double calculateLimelightShootingSpeed(double limelightDistance) {
+    public double calculateLimelightRPM(double limelightDistance) {
         if (limelightDistance <= CLOSEDISTANCE) {
             limelightShootingRPM = (2870 * Math.pow(1.002, limelightDistance));
         } else if (limelightDistance <= MIDDISTANCE) {
@@ -430,6 +439,19 @@ public class Robot extends TimedRobot {
             limelightShootingRPM = 0;
         }
         return limelightShootingRPM;
+    }
+
+    public int calculateLimelightHoodAngle(double limelightDistance) {
+        if (limelightDistance <= CLOSEDISTANCE) {
+            currentHoodAngle = SET_CLOSE_ANGLE;
+        } else if (limelightDistance <= MIDDISTANCE) {
+            currentHoodAngle = SET_MID_ANGLE;
+        } else if (limelightDistance <= FARDISTANCE) {
+            currentHoodAngle = SET_FAR_ANGLE;
+        } else {
+            currentHoodAngle = SET_MID_ANGLE;
+        }
+        return currentHoodAngle;
     }
 
     public void configLimelight() {
