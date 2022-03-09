@@ -19,8 +19,12 @@ clean up code
 
 package frc.robot;
 
+import java.nio.channels.spi.SelectorProvider;
+
 import com.ctre.phoenix.motorcontrol.can.WPI_VictorSPX;
 
+import edu.wpi.first.wpilibj.Counter;
+import edu.wpi.first.wpilibj.DigitalInput;
 import edu.wpi.first.wpilibj.Encoder;
 import edu.wpi.first.wpilibj.Joystick;
 import edu.wpi.first.wpilibj.TimedRobot;
@@ -66,7 +70,6 @@ public class Robot extends TimedRobot {
     private static final double PID_FF = 0.000015;
     private static final double PID_MAXOUTPUT = 1;
     private static final double PID_MINOUTPUT = -1;
-    private static final double PID_MAXRPM = 5700;
 
     // Joysticks
     private final Joystick joyE = new Joystick(0);
@@ -86,7 +89,7 @@ public class Robot extends TimedRobot {
     private final WPI_VictorSPX bottomExtendingClimber = new WPI_VictorSPX(12); // EXT2
 
     private final WPI_VictorSPX hoodMotor = new WPI_VictorSPX(8);
-    private final Encoder hoodEncoder = new Encoder(0, 0);
+    private final Counter hoodEncoder = new Counter(new DigitalInput(9));
 
     private final CANSparkMax shooterMotor = new CANSparkMax(1, MotorType.kBrushless);
     private final RelativeEncoder shooterEncoder = shooterMotor.getEncoder();
@@ -109,6 +112,7 @@ public class Robot extends TimedRobot {
     double limelightRightSteer = 0.0;
     double limelightShootingRPM = 0.0;
     int currentHoodAngle = SET_MID_ANGLE;
+    double currentHoodDegrees = 0.0;
 
     // Climber: obsolete
     double firstButtonTime = 0.0;
@@ -138,6 +142,9 @@ public class Robot extends TimedRobot {
         SmartDashboard.putNumber("Feed Forward", PID_FF);
         SmartDashboard.putNumber("Max Output", PID_MAXOUTPUT);
         SmartDashboard.putNumber("Min Output", PID_MINOUTPUT);
+
+        // testing only
+        hoodEncoder.reset();
     }
 
     @Override
@@ -151,6 +158,8 @@ public class Robot extends TimedRobot {
 
     @Override
     public void teleopPeriodic() {
+
+        SmartDashboard.putNumber("Flap Encoder", (currentHoodDegrees / (1000000 * 360)));
 
         // Set PID Coefficients: is this necessary since robotInit already set them?
         shooterPID.setP(PID_P);
@@ -171,6 +180,7 @@ public class Robot extends TimedRobot {
         boolean hoodAdjustBackward = joyE.getRawButton(10);
         boolean ejectButtonL = joyL.getRawButton(3);
         boolean ejectButtonR = joyR.getRawButton(3);
+        boolean resetHoodDegreesTest = joyL.getRawButton(6);
 
         // Limelight Buttons
         boolean limelightAlignButtonL = joyL.getTop();
@@ -206,11 +216,17 @@ public class Robot extends TimedRobot {
         calculateLimelightRPM(limelightDistance);
         calculateLimelightHoodAngle(limelightDistance);
 
+        if (resetHoodDegreesTest) {
+            resetHood();
+        }
+
         // Hood Adjustment Manual
         if (hoodAdjustForward) {
             hoodMotor.set(0.5);
+            currentHoodDegrees += hoodEncoder.get();
         } else if (hoodAdjustBackward) {
             hoodMotor.set(-0.5);
+            currentHoodDegrees -= hoodEncoder.get();
         } else {
             hoodMotor.set(0);
         }
@@ -423,7 +439,7 @@ public class Robot extends TimedRobot {
         double limelightTotalAngle = Math.toRadians(limelightMountingAngle + limelightTY);
 
         // Limelight distance from target in inches
-        limelightDistance = (limelightTargetHeight - limelightMountingHeight) / Math.atan(limelightTotalAngle)
+        limelightDistance = ((limelightTargetHeight - limelightMountingHeight) / Math.atan(limelightTotalAngle))
                 - limelightToBumper;
         return limelightDistance;
     }
@@ -463,6 +479,24 @@ public class Robot extends TimedRobot {
         table.getEntry("camMode").setNumber(0);
         // Defaults Limelight's snapshotting feature to off
         table.getEntry("snapshot").setNumber(0);
+    }
+
+    public void resetHood() {
+        boolean initialPass = true;
+        // Sets the max period to be stopped for 0.25 seconds
+        hoodEncoder.setMaxPeriod(0.25);
+        hoodMotor.set(0.25);
+        hoodMotor.set(-0.5);
+
+        // Rotates the motor until it stops for 0.25 seconds
+        while (initialPass || !hoodEncoder.getStopped()) {
+            hoodMotor.set(-0.25);
+            initialPass = false;
+        }
+        // Resets the encoder
+        hoodMotor.set(0);
+        hoodEncoder.reset();
+        currentHoodDegrees = 0;
     }
 
 }
