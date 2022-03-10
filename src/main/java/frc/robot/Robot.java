@@ -38,7 +38,9 @@ import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import edu.wpi.first.wpilibj2.command.button.Button;
 import edu.wpi.first.wpilibj2.command.button.NetworkButton;
 import edu.wpi.first.wpilibj2.command.button.Trigger;
-import edu.wpi.first.networktables.*;
+import edu.wpi.first.networktables.NetworkTable;
+import edu.wpi.first.networktables.NetworkTableEntry;
+import edu.wpi.first.networktables.NetworkTableInstance;
 import com.revrobotics.CANSparkMax;
 import com.revrobotics.CANSparkMaxLowLevel.MotorType;
 import com.revrobotics.SparkMaxRelativeEncoder;
@@ -110,7 +112,6 @@ public class Robot extends TimedRobot {
     double limelightMinCommand = 0.3;
     double limelightLeftSteer = 0.0;
     double limelightRightSteer = 0.0;
-    double limelightShootingRPM = 0.0;
     int currentHoodAngle = SET_MID_ANGLE;
     double currentHoodDegrees = 0.0;
 
@@ -170,7 +171,7 @@ public class Robot extends TimedRobot {
         shooterPID.setOutputRange(PID_MINOUTPUT, PID_MAXOUTPUT);
 
         // Buttons
-        boolean spinShooterButton = joyE.getRawButton(TRIGGER);
+        boolean spinShooterButton = joyE.getTop();
         boolean halfsiesL = joyL.getRawButton(TRIGGER);
         boolean halfsiesR = joyR.getRawButton(TRIGGER);
         boolean initialCollectionLButton = joyL.getRawButton(THUMBBUTTON);
@@ -183,9 +184,9 @@ public class Robot extends TimedRobot {
         boolean resetHoodDegreesTest = joyL.getRawButton(6);
 
         // Limelight Buttons
-        boolean limelightAlignButtonL = joyL.getTop();
-        boolean limelightAlignButtonR = joyR.getTop();
-        boolean limelightShootButton = joyE.getTop();
+        boolean limelightAlignButtonL = joyL.getRawButton(8);
+        boolean limelightAlignButtonR = joyR.getRawButton(8);
+        boolean limelightShootButton = joyE.getRawButton(TRIGGER);
 
         // Manual Climber Buttons
         boolean articulatingClimberButton = joyE.getRawButton(5);
@@ -207,14 +208,13 @@ public class Robot extends TimedRobot {
         double limelightTX = table.getEntry("tx").getDouble(0);
         double limelightTY = table.getEntry("ty").getDouble(0);
         double limelightDistance = calculateLimelightDistance(limelightTY);
+
+        double desiredShooterRPM = calculateLimelightRPM(limelightDistance) * 3.2;
+
         SmartDashboard.putNumber("Valid Target?", limelightTV);
         SmartDashboard.putNumber("Limelight tx", limelightTX);
         SmartDashboard.putNumber("Limelight ty", limelightTY);
         SmartDashboard.putNumber("Limelight ta", limelightTA);
-
-        calculateLimelightDistance(limelightTY);
-        calculateLimelightRPM(limelightDistance);
-        calculateLimelightHoodAngle(limelightDistance);
 
         if (resetHoodDegreesTest) {
             resetHood();
@@ -253,8 +253,9 @@ public class Robot extends TimedRobot {
         // Shooting Motor Controls
         if (limelightShootButton) {
             // Sets shooting motor PID to limelight's calculated RPM value when enabled
-            shooterPID.setReference(calculateLimelightRPM(limelightDistance),
+            shooterPID.setReference(desiredShooterRPM,
                     CANSparkMax.ControlType.kVelocity);
+
         } else if (spinShooterButton) {
             // Else uses value from operator control
             shooterMotor.set(shooterSpeedManual);
@@ -264,7 +265,7 @@ public class Robot extends TimedRobot {
 
         // SmartDashboard Values for testing
         SmartDashboard.putNumber("Limelight Distance, bumper to target", calculateLimelightDistance(limelightTY));
-        SmartDashboard.putNumber("Limelight RPM Value", calculateLimelightRPM(limelightDistance));
+        SmartDashboard.putNumber("Limelight RPM Value", desiredShooterRPM);
         SmartDashboard.putNumber("Actual RPM", shooterEncoder.getVelocity());
         SmartDashboard.putBoolean("Limelight Shooting Enabled?", limelightShootButton);
         SmartDashboard.putNumber("Manual %", shooterSpeedManual);
@@ -430,30 +431,33 @@ public class Robot extends TimedRobot {
     // TODO: set up method for adjust hood according to distance
     // TODO: find good limelight mounting angle, measure height + bumper distnace
     public double calculateLimelightDistance(double limelightTY) {
-        final double limelightMountingHeight = 0.0; // inches
-        final double limelightMountingAngle = 23; // degrees rotated back from vertical apparently
-        final double limelightTargetHeight = 104; // inches
-        final double limelightToBumper = 10; // horizontal distance from limelight's camera to outside of bumper
+        final double limelightMountingHeight = 24; // inches
+        final double limelightMountingAngle = 32.5; // degrees rotated back from vertical apparently
+        final double limelightTargetHeight = 90; // inches, should be set to 104!!!
+        final double limelightToBumper = 11.25; // horizontal distance from limelight's camera to outside of bumper
         double limelightDistance = 0.0;
 
         double limelightTotalAngle = Math.toRadians(limelightMountingAngle + limelightTY);
 
         // Limelight distance from target in inches
-        limelightDistance = ((limelightTargetHeight - limelightMountingHeight) / Math.atan(limelightTotalAngle))
+        limelightDistance = ((limelightTargetHeight - limelightMountingHeight) / Math.tan(limelightTotalAngle))
                 - limelightToBumper;
         return limelightDistance;
     }
 
     public double calculateLimelightRPM(double limelightDistance) {
+        double limelightShootingRPM = 0;
+
         if (limelightDistance <= CLOSEDISTANCE) {
             limelightShootingRPM = (2870 * Math.pow(1.002, limelightDistance));
         } else if (limelightDistance <= MIDDISTANCE) {
-            limelightRightSteer = (2713 * Math.pow(1.002, limelightDistance));
+            limelightShootingRPM = (2713 * Math.pow(1.002, limelightDistance));
         } else if (limelightDistance <= FARDISTANCE) {
             limelightShootingRPM = (3577 * Math.pow(1.001, limelightDistance));
         } else {
             limelightShootingRPM = 0;
         }
+
         return limelightShootingRPM;
     }
 
