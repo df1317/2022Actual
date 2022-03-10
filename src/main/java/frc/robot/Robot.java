@@ -433,7 +433,7 @@ public class Robot extends TimedRobot {
     public double calculateLimelightDistance(double limelightTY) {
         final double limelightMountingHeight = 24; // inches
         final double limelightMountingAngle = 32.5; // degrees rotated back from vertical apparently
-        final double limelightTargetHeight = 90; // inches, should be set to 104!!!
+        final double limelightTargetHeight = 104; // inches
         final double limelightToBumper = 11.25; // horizontal distance from limelight's camera to outside of bumper
         double limelightDistance = 0.0;
 
