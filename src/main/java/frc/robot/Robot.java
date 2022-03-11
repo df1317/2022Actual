@@ -2,24 +2,25 @@
 // Open Source Software; you can modify and/or share it under the terms of
 // the WPILib BSD license file in the root directory of this project.
 
+/*
+ * !! Make sure hood is correctly positioned before powering on/off !!
+ */
+
 /* TODO: 
-implement new limelight code
+autonomous yikes
+    start with 1 ball, drive to collect 2
+    after shooting 2, drive to collect 2
+    shoot 2 and profit
+        4 total balls
+        implement limelight aiming during autonomous
 automate climber for real
-    button pressed/released issues?
-    hold button down instead?
-    no time requirement for next stage of climbing?
-    FPGAtimer situation not working? other timing options?
-        look into wpilibj.TImer import for timing options
-        previous robot code
-50% drivetrain speed - halfSpeedButton(L/R)
+    no time requirement for next stage of climbing, use encoders
+    find encoder values for angles + max extension
 clean up code
-? hood motor set up 
-   ? add to limelight code
+add hood to limelight code, set up encoder values
 */
 
 package frc.robot;
-
-import java.nio.channels.spi.SelectorProvider;
 
 import com.ctre.phoenix.motorcontrol.can.WPI_VictorSPX;
 
@@ -65,11 +66,12 @@ public class Robot extends TimedRobot {
     private static final int SET_FAR_ANGLE = 3;
 
     // PID Coefficients
-    private static final double PID_P = 6e-5;
+    // changed p and i values, test pls
+    private static final double PID_P = .01;
     private static final double PID_I = 0;
     private static final double PID_D = 0;
     private static final double PID_IZ = 0;
-    private static final double PID_FF = 0.000015;
+    private static final double PID_FF = 0;
     private static final double PID_MAXOUTPUT = 1;
     private static final double PID_MINOUTPUT = -1;
 
@@ -97,6 +99,9 @@ public class Robot extends TimedRobot {
     private final RelativeEncoder shooterEncoder = shooterMotor.getEncoder();
     private final SparkMaxPIDController shooterPID = shooterMotor.getPIDController();
 
+    private final Encoder articulatingEncoder = new Encoder(5, 6);
+    private final Encoder extendingEncoder = new Encoder(7, 8);
+
     // Motor Controller Groups
     private final MotorControllerGroup leftMotorGroup = new MotorControllerGroup(frontLeftMotor, backLeftMotor);
     private final MotorControllerGroup rightMotorGroup = new MotorControllerGroup(frontRightMotor, backRightMotor);
@@ -109,13 +114,13 @@ public class Robot extends TimedRobot {
     // Limelight
     private NetworkTable table = NetworkTableInstance.getDefault().getTable("limelight");
     double limelightKP = -0.1;
-    double limelightMinCommand = 0.3;
+    double limelightMinCommand = 0.1;
     double limelightLeftSteer = 0.0;
     double limelightRightSteer = 0.0;
     int currentHoodAngle = SET_MID_ANGLE;
     double currentHoodDegrees = 0.0;
 
-    // Climber: obsolete
+    // Climber: obsolete, remove me
     double firstButtonTime = 0.0;
     double secondButtonTime = 0.0;
     double thirdButtonTime = 0.0;
@@ -136,15 +141,15 @@ public class Robot extends TimedRobot {
         shooterPID.setOutputRange(PID_MINOUTPUT, PID_MAXOUTPUT);
 
         // Set PID Coefficients to SmartDashboard, referenced in teleop code
-        SmartDashboard.putNumber("P Gain", PID_P);
-        SmartDashboard.putNumber("I Gain", PID_I);
-        SmartDashboard.putNumber("D Gain", PID_D);
-        SmartDashboard.putNumber("I Zone", PID_IZ);
-        SmartDashboard.putNumber("Feed Forward", PID_FF);
-        SmartDashboard.putNumber("Max Output", PID_MAXOUTPUT);
-        SmartDashboard.putNumber("Min Output", PID_MINOUTPUT);
+        // SmartDashboard.putNumber("P Gain", PID_P);
+        // SmartDashboard.putNumber("I Gain", PID_I);
+        // SmartDashboard.putNumber("D Gain", PID_D);
+        // SmartDashboard.putNumber("I Zone", PID_IZ);
+        // SmartDashboard.putNumber("Feed Forward", PID_FF);
+        // SmartDashboard.putNumber("Max Output", PID_MAXOUTPUT);
+        // SmartDashboard.putNumber("Min Output", PID_MINOUTPUT);
 
-        // testing only
+        // Resets hood encoder everytime the robot is powered on
         hoodEncoder.reset();
     }
 
@@ -161,8 +166,10 @@ public class Robot extends TimedRobot {
     public void teleopPeriodic() {
 
         SmartDashboard.putNumber("Flap Encoder", (currentHoodDegrees / (1000000 * 360)));
+        SmartDashboard.putNumber("Articulating Encoder", articulatingEncoder.getDistance());
+        SmartDashboard.putNumber("Extending Encoder", extendingEncoder.getDistance());
 
-        // Set PID Coefficients: is this necessary since robotInit already set them?
+        // Set PID Coefficients
         shooterPID.setP(PID_P);
         shooterPID.setI(PID_I);
         shooterPID.setD(PID_D);
@@ -195,27 +202,27 @@ public class Robot extends TimedRobot {
         boolean unwindClimberButton = joyE.getRawButton(4);
 
         // Automated Climber Buttons: obsolete
-        boolean firstButtonPressed = joyE.getRawButtonPressed(11);
-        boolean secondButtonPressed = joyE.getRawButtonPressed(8);
-        boolean thirdButtonPressed = joyE.getRawButtonPressed(7);
+        boolean firstButton = joyE.getRawButton(11);
+        boolean secondButton = joyE.getRawButton(8);
+        boolean thirdButton = joyE.getRawButton(7);
 
         // Updating Variables
         double shooterSpeedManual = (joyE.getRawAxis(3) / 4) + 0.75; // converts [-1, 1] to [-1/4, 1/4] to [0.5, 1]
 
         // Limelight Variables
         double limelightTV = table.getEntry("tv").getDouble(0);
-        double limelightTA = table.getEntry("ta").getDouble(0);
         double limelightTX = table.getEntry("tx").getDouble(0);
         double limelightTY = table.getEntry("ty").getDouble(0);
+
         double limelightDistance = calculateLimelightDistance(limelightTY);
+        double desiredShooterRPM = calculateLimelightRPM(limelightDistance);
+        boolean limelightHasTarget = limelightTV > 0;
 
-        double desiredShooterRPM = calculateLimelightRPM(limelightDistance) * 3.2;
-
-        SmartDashboard.putNumber("Valid Target?", limelightTV);
+        SmartDashboard.putBoolean("Valid Target?", limelightHasTarget);
         SmartDashboard.putNumber("Limelight tx", limelightTX);
         SmartDashboard.putNumber("Limelight ty", limelightTY);
-        SmartDashboard.putNumber("Limelight ta", limelightTA);
 
+        // Hold down reset encoder button for this to work
         if (resetHoodDegreesTest) {
             resetHood();
         }
@@ -246,9 +253,13 @@ public class Robot extends TimedRobot {
 
         // Limelight Alignment Controls
         if (limelightAlignButtonL || limelightAlignButtonR) {
-            limelightSteeringAlign(limelightAlignButtonL, limelightAlignButtonR, limelightTX);
+            limelightLeftSteer = limelightSteeringAlign(limelightAlignButtonL, limelightAlignButtonR, limelightTX);
+            limelightRightSteer = limelightSteeringAlign(limelightAlignButtonL, limelightAlignButtonR, limelightTX);
+
             robotDrive.tankDrive(limelightLeftSteer, limelightRightSteer);
         }
+        SmartDashboard.putNumber("LEFTSTEER", limelightLeftSteer);
+        SmartDashboard.putNumber("RIGHTSTEER", limelightRightSteer);
 
         // Shooting Motor Controls
         if (limelightShootButton) {
@@ -263,8 +274,11 @@ public class Robot extends TimedRobot {
             shooterMotor.set(0);
         }
 
+        boolean RPMinRange = (Math.abs(desiredShooterRPM - shooterEncoder.getVelocity()) < 75);
+
         // SmartDashboard Values for testing
-        SmartDashboard.putNumber("Limelight Distance, bumper to target", calculateLimelightDistance(limelightTY));
+        SmartDashboard.putBoolean("RPM IN RANGE", RPMinRange);
+        SmartDashboard.putNumber("Limelight Distance", calculateLimelightDistance(limelightTY));
         SmartDashboard.putNumber("Limelight RPM Value", desiredShooterRPM);
         SmartDashboard.putNumber("Actual RPM", shooterEncoder.getVelocity());
         SmartDashboard.putBoolean("Limelight Shooting Enabled?", limelightShootButton);
@@ -285,132 +299,51 @@ public class Robot extends TimedRobot {
             bottomCollectorMotor.set(0);
         }
 
-        // Automated Climber Controls: buttons 11, 8, 7
-        // yikes help
-        /*
-         * Everything is timed to be 1 second apart. Extending arms are lifted slightly
-         * before they are rotated off of a bar.
-         * -ExtendingClimberSpeed = winch pulls up robot
-         * +ExtendingClimberSpeed = releases winch to allow extension of arms
-         * -ArticulatingClimberSpeed = causes clockwise rotation |/
-         * +ArticulatingClimberSpeed = causes counterclockwise rotation \|
-         */
-        if (firstButtonPressed) {
-            // Button 11 is pressed to pull robot up onto bar 1
-            firstButtonTime = Timer.getFPGATimestamp() - teleopStartTime;
-            extendingClimbers.set(-EXTCLIMBERSPEED);
-            articulatingClimbers.set(0);
-        } else if (firstButtonTime > 2 && secondButtonPressed) {
-            secondButtonTime = Timer.getFPGATimestamp() - teleopStartTime;
+        if (firstButton) {
+            if (extendingEncoder.getDistance() < 538) {
+                extendingClimbers.set(EXTCLIMBERSPEED);
+            } else {
+                extendingClimbers.set(0);
+            }
+        }
+        if (secondButton) {
+            if (articulatingEncoder.getDistance() < 30) {
+                articulatingClimbers.set(ARTCLIMBERSPEED);
+            }
+            if (articulatingEncoder.getDistance() < 34) {
 
-            if (secondButtonTime <= 1) {
-                // Button 8 is pressed to slightly raise extending arms off of bar 1
-                // Articulating arms are rotated to angle towards bar 2
-                topExtendingClimber.set(EXTCLIMBERSPEED * 0.5);
-                bottomExtendingClimber.set(EXTCLIMBERSPEED * 0.5);
-                topArticulatingClimber.set(-ARTCLIMBERSPEED);
-                bottomArticulatingClimber.set(-ARTCLIMBERSPEED);
-            } else if (secondButtonTime > 1 && secondButtonTime <= 2) {
-                // After rotating, we extend to reach for bar 2
-                topExtendingClimber.set(EXTCLIMBERSPEED);
-                bottomExtendingClimber.set(EXTCLIMBERSPEED);
-                topArticulatingClimber.set(0);
-                bottomArticulatingClimber.set(0);
-            } else if (secondButtonTime > 3 && secondButtonTime <= 4) {
-                // After reaching towards bar 2, we rotate to allow extending arms to grasp it
-                topExtendingClimber.set(0);
-                bottomExtendingClimber.set(0);
-                topArticulatingClimber.set(ARTCLIMBERSPEED);
-                bottomArticulatingClimber.set(ARTCLIMBERSPEED);
+            } else {
+                articulatingClimbers.set(0);
             }
-        } else if (secondButtonTime > 3 && thirdButtonPressed) {
-            thirdButtonTime = Timer.getFPGATimestamp() - teleopStartTime;
-            if (thirdButtonTime < 1) {
-                // Button 7 is pressed to pull robot onto bar 2
-                topExtendingClimber.set(-EXTCLIMBERSPEED);
-                bottomExtendingClimber.set(-EXTCLIMBERSPEED);
-                topArticulatingClimber.set(0);
-                bottomArticulatingClimber.set(0);
-            } else if (thirdButtonTime >= 1 && thirdButtonTime <= 2) {
-                // Extending arms lower a little bit to allow articulating arms to sneak under
-                // Articulating arms are rotated to vertical to allow us to grasp bar 2
-                topExtendingClimber.set(EXTCLIMBERSPEED * 0.5);
-                bottomExtendingClimber.set(EXTCLIMBERSPEED * 0.5);
-                topArticulatingClimber.set(ARTCLIMBERSPEED);
-                bottomArticulatingClimber.set(ARTCLIMBERSPEED);
-            } else if (thirdButtonTime > 2 && thirdButtonTime <= 3) {
-                // Extending arms pull articulating arms up onto bar 2
-                topExtendingClimber.set(-EXTCLIMBERSPEED);
-                bottomExtendingClimber.set(-EXTCLIMBERSPEED);
-                topArticulatingClimber.set(0);
-                bottomArticulatingClimber.set(0);
-            } else if (thirdButtonTime > 3 && thirdButtonTime <= 4) {
-                // Extending arms extend slightly so that they can rotate off of bar 2
-                // Articulating arms rotate to angle towards bar 3
-                topExtendingClimber.set(EXTCLIMBERSPEED * 0.5);
-                bottomExtendingClimber.set(EXTCLIMBERSPEED * 0.5);
-                topArticulatingClimber.set(-ARTCLIMBERSPEED);
-                bottomArticulatingClimber.set(-ARTCLIMBERSPEED);
-            } else if (thirdButtonTime > 4 && thirdButtonTime <= 5) {
-                // Extending arms reach to bar 3
-                topExtendingClimber.set(EXTCLIMBERSPEED);
-                bottomExtendingClimber.set(EXTCLIMBERSPEED);
-                topArticulatingClimber.set(0);
-                bottomExtendingClimber.set(0);
-            } else if (thirdButtonTime > 5 && thirdButtonTime <= 6) {
-                // Articulating arms rotate to allow extending arms to grab bar 3
-                topExtendingClimber.set(0);
-                bottomExtendingClimber.set(0);
-                topArticulatingClimber.set(ARTCLIMBERSPEED);
-                bottomArticulatingClimber.set(ARTCLIMBERSPEED);
-            } else if (thirdButtonTime > 6 && thirdButtonTime <= 7) {
-                // Extending arms pull us on to bar 3
-                // Articulating arms slowly rotate off of bar 2 to rest against bar 3
-                // (so we don't get points deducted for touching bar 2)
-                topExtendingClimber.set(-EXTCLIMBERSPEED);
-                bottomExtendingClimber.set(-EXTCLIMBERSPEED);
-                topArticulatingClimber.set(ARTCLIMBERSPEED * 0.5);
-                bottomArticulatingClimber.set(ARTCLIMBERSPEED * 0.5);
-            }
+        }
+
+        // Articulating Climber Controls [MANUAL]: operator buttons 5 & 3
+        if (articulatingClimberButton)
+
+        {
+            articulatingClimbers.set(ARTCLIMBERSPEED);
+        } else if (articulatingClimberOtherwayButton) {
+            articulatingClimbers.set(-ARTCLIMBERSPEED);
         } else {
-            // manual time! please use manual please it's great
-            // Articulating Climber Controls [MANUAL]: operator buttons 5 & 3
-            if (articulatingClimberButton) {
-                topArticulatingClimber.set(ARTCLIMBERSPEED);
-                bottomArticulatingClimber.set(ARTCLIMBERSPEED);
-            } else if (articulatingClimberOtherwayButton) {
-                topArticulatingClimber.set(-ARTCLIMBERSPEED);
-                bottomArticulatingClimber.set(-ARTCLIMBERSPEED);
-            } else {
-                topArticulatingClimber.set(0);
-                bottomArticulatingClimber.set(0);
-            }
+            articulatingClimbers.set(0);
+        }
 
-            // Extending Climber Winch Controls [MANUAL]: operator buttons 6 & 4
-            if (windClimberButton) {
-                topExtendingClimber.set(EXTCLIMBERSPEED);
-                bottomExtendingClimber.set(EXTCLIMBERSPEED);
-            } else if (unwindClimberButton) {
-                topExtendingClimber.set(-EXTCLIMBERSPEED);
-                bottomExtendingClimber.set(-EXTCLIMBERSPEED);
-            } else {
-                topExtendingClimber.set(0);
-                bottomExtendingClimber.set(0);
-            }
-
+        // Extending Climber Winch Controls [MANUAL]: operator buttons 6 & 4
+        if (windClimberButton) {
+            extendingClimbers.set(EXTCLIMBERSPEED);
+        } else if (unwindClimberButton) {
+            extendingClimbers.set(-EXTCLIMBERSPEED);
+        } else {
+            extendingClimbers.set(0);
         }
 
     }
 
-    public void limelightSteeringAlign(boolean limelightAlignButtonL, boolean limelightAlignButtonR,
+    public double limelightSteeringAlign(boolean limelightAlignButtonL, boolean limelightAlignButtonR,
             double limelightTX) {
         limelightLeftSteer = 0.0;
         limelightRightSteer = 0.0;
 
-        // Limelight Align
-        if (!limelightAlignButtonL || !limelightAlignButtonR) {
-            return;
-        }
         double limelightHeadingError = -limelightTX;
         double limelightAlignmentAdjust = 0.0;
 
@@ -420,12 +353,7 @@ public class Robot extends TimedRobot {
             limelightAlignmentAdjust = (limelightKP * limelightHeadingError) + limelightMinCommand;
         }
 
-        limelightLeftSteer += limelightAlignmentAdjust;
-        limelightRightSteer -= limelightAlignmentAdjust;
-
-        // Testing Only
-        SmartDashboard.putNumber("LimelightLeftSteer", limelightLeftSteer);
-        SmartDashboard.putNumber("LimelightRightSteer", limelightRightSteer);
+        return limelightAlignmentAdjust;
     }
 
     // TODO: set up method for adjust hood according to distance
@@ -486,21 +414,18 @@ public class Robot extends TimedRobot {
     }
 
     public void resetHood() {
-        boolean initialPass = true;
         // Sets the max period to be stopped for 0.25 seconds
         hoodEncoder.setMaxPeriod(0.25);
-        hoodMotor.set(0.25);
-        hoodMotor.set(-0.5);
 
-        // Rotates the motor until it stops for 0.25 seconds
-        while (initialPass || !hoodEncoder.getStopped()) {
+        // Sets the motor to begin rotating until it stops
+        while (!hoodEncoder.getStopped()) {
             hoodMotor.set(-0.25);
-            initialPass = false;
         }
-        // Resets the encoder
-        hoodMotor.set(0);
-        hoodEncoder.reset();
-        currentHoodDegrees = 0;
+        // Resets the encoder once the motor has stopped
+        while (hoodEncoder.getStopped()) {
+            hoodMotor.set(0);
+            hoodEncoder.reset();
+            currentHoodDegrees = 0;
+        }
     }
-
 }
