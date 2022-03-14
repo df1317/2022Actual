@@ -51,27 +51,33 @@ import com.revrobotics.SparkMaxPIDController;
 public class Robot extends TimedRobot {
 
     // Constants
+    private static final double EXTPULLUP = 0;
+    private static final double ARTROTATETOGRAB = 0;
+
     private static final double DEADZONE = 0.1;
     private static final double SPEED_MOD = 1;
     private static final int TRIGGER = 1;
     private static final int THUMBBUTTON = 2;
+
     private static final double COLLECTORSPEED = 0.5;
     private static final double EXTCLIMBERSPEED = 0.75;
     private static final double ARTCLIMBERSPEED = 0.25;
+
     private static final double CLOSEDISTANCE = 114;
     private static final double MIDDISTANCE = 174;
     private static final double FARDISTANCE = 228;
-    private static final int SET_CLOSE_ANGLE = 1;
-    private static final int SET_MID_ANGLE = 2;
-    private static final int SET_FAR_ANGLE = 3;
+
+    private static final double SET_CLOSE_ANGLE = 0.0;
+    private static final double SET_MID_ANGLE = .000002;
+    private static final double SET_FAR_ANGLE = .000004;
 
     // PID Coefficients
-    // changed p and i values, test pls
-    private static final double PID_P = .01;
+    // Don't touch
+    private static final double PID_P = .009; // was 0.01, better at .009
     private static final double PID_I = 0;
     private static final double PID_D = 0;
     private static final double PID_IZ = 0;
-    private static final double PID_FF = 0;
+    private static final double PID_FF = 0.00001; // was 0.0, better at 0.00001
     private static final double PID_MAXOUTPUT = 1;
     private static final double PID_MINOUTPUT = -1;
 
@@ -117,8 +123,10 @@ public class Robot extends TimedRobot {
     double limelightMinCommand = 0.1;
     double limelightLeftSteer = 0.0;
     double limelightRightSteer = 0.0;
-    int currentHoodAngle = SET_MID_ANGLE;
-    double currentHoodDegrees = 0.0;
+
+    // Hood Values
+    double desiredHoodAngle = SET_MID_ANGLE;
+    double currentHoodAngle = 0.0;
 
     // Climber: obsolete, remove me
     double firstButtonTime = 0.0;
@@ -140,7 +148,7 @@ public class Robot extends TimedRobot {
         shooterPID.setFF(PID_FF);
         shooterPID.setOutputRange(PID_MINOUTPUT, PID_MAXOUTPUT);
 
-        // Set PID Coefficients to SmartDashboard, referenced in teleop code
+        // Set PID Coefficients to SmartDashboard
         // SmartDashboard.putNumber("P Gain", PID_P);
         // SmartDashboard.putNumber("I Gain", PID_I);
         // SmartDashboard.putNumber("D Gain", PID_D);
@@ -149,8 +157,10 @@ public class Robot extends TimedRobot {
         // SmartDashboard.putNumber("Max Output", PID_MAXOUTPUT);
         // SmartDashboard.putNumber("Min Output", PID_MINOUTPUT);
 
-        // Resets hood encoder everytime the robot is powered on
+        // Resets encoders everytime the robot is powered on
         hoodEncoder.reset();
+        articulatingEncoder.reset();
+        extendingEncoder.reset();
     }
 
     @Override
@@ -165,7 +175,7 @@ public class Robot extends TimedRobot {
     @Override
     public void teleopPeriodic() {
 
-        SmartDashboard.putNumber("Flap Encoder", (currentHoodDegrees / (1000000 * 360)));
+        SmartDashboard.putNumber("Flap Encoder", (currentHoodAngle / (1000000 * 360)));
         SmartDashboard.putNumber("Articulating Encoder", articulatingEncoder.getDistance());
         SmartDashboard.putNumber("Extending Encoder", extendingEncoder.getDistance());
 
@@ -191,8 +201,8 @@ public class Robot extends TimedRobot {
         boolean resetHoodDegreesTest = joyL.getRawButton(6);
 
         // Limelight Buttons
-        boolean limelightAlignButtonL = joyL.getRawButton(8);
-        boolean limelightAlignButtonR = joyR.getRawButton(8);
+        boolean limelightAlignButtonL = joyL.getRawButton(4);
+        boolean limelightAlignButtonR = joyR.getRawButton(4);
         boolean limelightShootButton = joyE.getRawButton(TRIGGER);
 
         // Manual Climber Buttons
@@ -205,6 +215,10 @@ public class Robot extends TimedRobot {
         boolean firstButton = joyE.getRawButton(11);
         boolean secondButton = joyE.getRawButton(8);
         boolean thirdButton = joyE.getRawButton(7);
+
+        // Driving Variables
+        double leftHalfSpeed = 0;
+        double rightHalfSpeed = 0;
 
         // Updating Variables
         double shooterSpeedManual = (joyE.getRawAxis(3) / 4) + 0.75; // converts [-1, 1] to [-1/4, 1/4] to [0.5, 1]
@@ -219,34 +233,37 @@ public class Robot extends TimedRobot {
         boolean limelightHasTarget = limelightTV > 0;
 
         SmartDashboard.putBoolean("Valid Target?", limelightHasTarget);
-        SmartDashboard.putNumber("Limelight tx", limelightTX);
-        SmartDashboard.putNumber("Limelight ty", limelightTY);
+        // SmartDashboard.putNumber("Limelight tx", limelightTX);
+        // SmartDashboard.putNumber("Limelight ty", limelightTY);
 
         // Hold down reset encoder button for this to work
         if (resetHoodDegreesTest) {
-            resetHood();
+            hoodResetMethod();
         }
 
         // Hood Adjustment Manual
         if (hoodAdjustForward) {
             hoodMotor.set(0.5);
-            currentHoodDegrees += hoodEncoder.get();
+            currentHoodAngle += hoodEncoder.get();
         } else if (hoodAdjustBackward) {
             hoodMotor.set(-0.5);
-            currentHoodDegrees -= hoodEncoder.get();
+            currentHoodAngle -= hoodEncoder.get();
         } else {
             hoodMotor.set(0);
         }
 
+        // Hood Encoder Reset Manual? Except it doesn't always seem to work
+        if (currentHoodAngle < 0) {
+            currentHoodAngle = 0;
+        }
+
+        // Fancy Ternary Operators heck yeah
+        leftHalfSpeed = halfsiesL ? 0.5 : 0;
+        rightHalfSpeed = halfsiesR ? 0.5 : 0;
+
         // Drivetrain Controls: left and right joysticks
         if (Math.abs(joyL.getY()) > DEADZONE || Math.abs(joyR.getY()) > DEADZONE) {
-            if (halfsiesL) {
-                robotDrive.tankDrive(joyL.getY() * SPEED_MOD * 0.5, joyR.getY() * SPEED_MOD);
-            } else if (halfsiesR) {
-                robotDrive.tankDrive(joyL.getY() * SPEED_MOD, joyR.getY() * SPEED_MOD * 0.5);
-            } else {
-                robotDrive.tankDrive(joyL.getY() * SPEED_MOD, joyR.getY() * SPEED_MOD);
-            }
+            robotDrive.tankDrive(joyL.getY() * SPEED_MOD * leftHalfSpeed, joyR.getY() * SPEED_MOD * rightHalfSpeed);
         } else {
             robotDrive.tankDrive(0, 0);
         }
@@ -258,15 +275,12 @@ public class Robot extends TimedRobot {
 
             robotDrive.tankDrive(limelightLeftSteer, limelightRightSteer);
         }
-        SmartDashboard.putNumber("LEFTSTEER", limelightLeftSteer);
-        SmartDashboard.putNumber("RIGHTSTEER", limelightRightSteer);
 
         // Shooting Motor Controls
         if (limelightShootButton) {
             // Sets shooting motor PID to limelight's calculated RPM value when enabled
             shooterPID.setReference(desiredShooterRPM,
                     CANSparkMax.ControlType.kVelocity);
-
         } else if (spinShooterButton) {
             // Else uses value from operator control
             shooterMotor.set(shooterSpeedManual);
@@ -299,28 +313,34 @@ public class Robot extends TimedRobot {
             bottomCollectorMotor.set(0);
         }
 
+        // Articulating Climber: set at an angle (not vertical) to grab bar
+        // Extending Climber: starts fully extended to pull us onto bar
         if (firstButton) {
-            if (extendingEncoder.getDistance() < 538) {
-                extendingClimbers.set(EXTCLIMBERSPEED);
+            if (extendingEncoder.getDistance() > EXTPULLUP) {
+                extendingClimbers.set(-EXTCLIMBERSPEED);
             } else {
                 extendingClimbers.set(0);
             }
-        }
-        if (secondButton) {
-            if (articulatingEncoder.getDistance() < 30) {
-                articulatingClimbers.set(ARTCLIMBERSPEED);
-            }
-            if (articulatingEncoder.getDistance() < 34) {
 
+            if (extendingEncoder.getDistance() > (EXTPULLUP - 20) && articulatingEncoder.getDistance() < 0) {
+                articulatingClimbers.set(ARTCLIMBERSPEED);
             } else {
                 articulatingClimbers.set(0);
             }
         }
 
-        // Articulating Climber Controls [MANUAL]: operator buttons 5 & 3
-        if (articulatingClimberButton)
+        if (secondButton) {
+            while (articulatingEncoder.getDistance() < ARTROTATETOGRAB) {
+                articulatingClimbers.set(ARTCLIMBERSPEED);
+            }
+            while (articulatingEncoder.getDistance() < (ARTROTATETOGRAB - 15)) {
+                extendingClimbers.set(EXTCLIMBERSPEED);
+            }
 
-        {
+        }
+
+        // Articulating Climber Controls [MANUAL]: operator buttons 5 & 3
+        if (articulatingClimberButton) {
             articulatingClimbers.set(ARTCLIMBERSPEED);
         } else if (articulatingClimberOtherwayButton) {
             articulatingClimbers.set(-ARTCLIMBERSPEED);
@@ -356,8 +376,7 @@ public class Robot extends TimedRobot {
         return limelightAlignmentAdjust;
     }
 
-    // TODO: set up method for adjust hood according to distance
-    // TODO: find good limelight mounting angle, measure height + bumper distnace
+    // TODO: set up method for adjust hood according to limelight distance
     public double calculateLimelightDistance(double limelightTY) {
         final double limelightMountingHeight = 24; // inches
         final double limelightMountingAngle = 32.5; // degrees rotated back from vertical apparently
@@ -389,17 +408,29 @@ public class Robot extends TimedRobot {
         return limelightShootingRPM;
     }
 
-    public int calculateLimelightHoodAngle(double limelightDistance) {
+    public double calculateLimelightHoodAngle(double limelightDistance) {
         if (limelightDistance <= CLOSEDISTANCE) {
-            currentHoodAngle = SET_CLOSE_ANGLE;
+            desiredHoodAngle = SET_CLOSE_ANGLE;
         } else if (limelightDistance <= MIDDISTANCE) {
-            currentHoodAngle = SET_MID_ANGLE;
+            desiredHoodAngle = SET_MID_ANGLE;
         } else if (limelightDistance <= FARDISTANCE) {
-            currentHoodAngle = SET_FAR_ANGLE;
+            desiredHoodAngle = SET_FAR_ANGLE;
         } else {
-            currentHoodAngle = SET_MID_ANGLE;
+            desiredHoodAngle = SET_MID_ANGLE;
         }
-        return currentHoodAngle;
+        return desiredHoodAngle;
+    }
+
+    private void adjustLimelightHoodAngle() {
+        if (currentHoodAngle < desiredHoodAngle) {
+            hoodMotor.set(0.25);
+            currentHoodAngle += hoodEncoder.get();
+        } else if (currentHoodAngle > desiredHoodAngle) {
+            hoodMotor.set(-0.25);
+            currentHoodAngle -= hoodEncoder.get();
+        } else {
+            hoodMotor.set(0);
+        }
     }
 
     public void configLimelight() {
@@ -413,7 +444,7 @@ public class Robot extends TimedRobot {
         table.getEntry("snapshot").setNumber(0);
     }
 
-    public void resetHood() {
+    public void hoodResetMethod() {
         // Sets the max period to be stopped for 0.25 seconds
         hoodEncoder.setMaxPeriod(0.25);
 
@@ -425,7 +456,7 @@ public class Robot extends TimedRobot {
         while (hoodEncoder.getStopped()) {
             hoodMotor.set(0);
             hoodEncoder.reset();
-            currentHoodDegrees = 0;
+            currentHoodAngle = 0;
         }
     }
 }
