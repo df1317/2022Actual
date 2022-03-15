@@ -39,6 +39,11 @@ import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import edu.wpi.first.wpilibj2.command.button.Button;
 import edu.wpi.first.wpilibj2.command.button.NetworkButton;
 import edu.wpi.first.wpilibj2.command.button.Trigger;
+import edu.wpi.first.math.geometry.Pose2d;
+import edu.wpi.first.math.kinematics.DifferentialDriveKinematics;
+import edu.wpi.first.math.kinematics.DifferentialDriveOdometry;
+import edu.wpi.first.math.kinematics.DifferentialDriveWheelSpeeds;
+import edu.wpi.first.math.util.Units;
 import edu.wpi.first.networktables.NetworkTable;
 import edu.wpi.first.networktables.NetworkTableEntry;
 import edu.wpi.first.networktables.NetworkTableInstance;
@@ -47,6 +52,10 @@ import com.revrobotics.CANSparkMaxLowLevel.MotorType;
 import com.revrobotics.SparkMaxRelativeEncoder;
 import com.revrobotics.RelativeEncoder;
 import com.revrobotics.SparkMaxPIDController;
+import edu.wpi.first.wpilibj.interfaces.Gyro;
+
+import com.kauailabs.navx.frc.AHRS;
+import edu.wpi.first.wpilibj.SPI;
 
 public class Robot extends TimedRobot {
 
@@ -70,6 +79,8 @@ public class Robot extends TimedRobot {
     private static final double SET_CLOSE_ANGLE = 0.0;
     private static final double SET_MID_ANGLE = .000002;
     private static final double SET_FAR_ANGLE = .000004;
+
+    private static final double CHASSISWHEELWIDTH = 20; // inches
 
     // PID Coefficients
     // Don't touch
@@ -97,16 +108,20 @@ public class Robot extends TimedRobot {
     private final WPI_VictorSPX bottomArticulatingClimber = new WPI_VictorSPX(11);
     private final WPI_VictorSPX topExtendingClimber = new WPI_VictorSPX(4); // EXT
     private final WPI_VictorSPX bottomExtendingClimber = new WPI_VictorSPX(12); // EXT2
-
     private final WPI_VictorSPX hoodMotor = new WPI_VictorSPX(8);
-    private final Counter hoodEncoder = new Counter(new DigitalInput(9));
-
     private final CANSparkMax shooterMotor = new CANSparkMax(1, MotorType.kBrushless);
-    private final RelativeEncoder shooterEncoder = shooterMotor.getEncoder();
+
     private final SparkMaxPIDController shooterPID = shooterMotor.getPIDController();
 
+    private final Counter hoodEncoder = new Counter(new DigitalInput(9));
+    private final RelativeEncoder shooterEncoder = shooterMotor.getEncoder();
     private final Encoder articulatingEncoder = new Encoder(5, 6);
     private final Encoder extendingEncoder = new Encoder(7, 8);
+    private final Encoder leftEncoder = new Encoder(1, 2, false); // not inverted
+    private final Encoder rightEncoder = new Encoder(3, 4, true); // inverted
+
+    // Gyroscope
+    AHRS gyro = new AHRS(SPI.Port.kMXP);
 
     // Motor Controller Groups
     private final MotorControllerGroup leftMotorGroup = new MotorControllerGroup(frontLeftMotor, backLeftMotor);
@@ -116,6 +131,8 @@ public class Robot extends TimedRobot {
             bottomExtendingClimber);
     private final MotorControllerGroup articulatingClimbers = new MotorControllerGroup(topArticulatingClimber,
             bottomArticulatingClimber);
+
+    private final DifferentialDriveOdometry odometry = new DifferentialDriveOdometry(gyro.getRotation2d());
 
     // Limelight
     private NetworkTable table = NetworkTableInstance.getDefault().getTable("limelight");
@@ -161,7 +178,59 @@ public class Robot extends TimedRobot {
         hoodEncoder.reset();
         articulatingEncoder.reset();
         extendingEncoder.reset();
+
+        leftEncoder.setDistancePerPulse(10);
+        rightEncoder.setDistancePerPulse(10);
+
+        resetEncoders();
     }
+
+    @Override
+    public void autonomousInit() {
+
+    }
+
+    @Override
+    public void autonomousPeriodic() {
+        odometry.update(gyro.getRotation2d(), leftEncoder.getDistance(), rightEncoder.getDistance());
+    }
+
+    public Pose2d getPose() {
+        return odometry.getPoseMeters();
+    }
+
+    public DifferentialDriveWheelSpeeds getWheelSpeeds() {
+        return new DifferentialDriveWheelSpeeds(leftEncoder.getRate(), rightEncoder.getRate());
+    }
+
+    public void resetOdometry(Pose2d pose) {
+        resetEncoders();
+        odometry.resetPosition(pose, gyro.getRotation2d());
+    }
+
+    public void arcadeDrive(double fwd, double rot) {
+        robotDrive.arcadeDrive(fwd, rot);
+    }
+
+    public void tankDriveVolts(double leftVolts, double rightVolts) {
+        leftMotorGroup.setVoltage(leftVolts);
+        rightMotorGroup.setVoltage(rightVolts);
+        robotDrive.feed();
+    }
+
+    public double getAverageEncoderDistance = (leftEncoder.getDistance() + rightEncoder.getDistance()) / 2.0;
+
+    public void setMaxOutput(double maxOutput) {
+        robotDrive.setMaxOutput(maxOutput);
+    }
+
+    /** Zeroes the heading of the robot. */
+    public void zeroHeading() {
+        gyro.reset();
+    }
+
+    double getHeading = gyro.getRotation2d().getDegrees();
+    double getTurnRate = -gyro.getRate();
 
     @Override
     public void teleopInit() {
@@ -233,13 +302,13 @@ public class Robot extends TimedRobot {
         boolean limelightHasTarget = limelightTV > 0;
 
         SmartDashboard.putBoolean("Valid Target?", limelightHasTarget);
-        // SmartDashboard.putNumber("Limelight tx", limelightTX);
-        // SmartDashboard.putNumber("Limelight ty", limelightTY);
 
-        // Hold down reset encoder button for this to work
-        if (resetHoodDegreesTest) {
-            hoodResetMethod();
-        }
+        /*
+         * // Hold down reset encoder button for this to work
+         * if (resetHoodDegreesTest) {
+         * hoodResetMethod();
+         * }
+         */
 
         // Hood Adjustment Manual
         if (hoodAdjustForward) {
@@ -444,19 +513,29 @@ public class Robot extends TimedRobot {
         table.getEntry("snapshot").setNumber(0);
     }
 
-    public void hoodResetMethod() {
-        // Sets the max period to be stopped for 0.25 seconds
-        hoodEncoder.setMaxPeriod(0.25);
+    /*
+     * public void hoodResetMethod() {
+     * // Sets the max period to be stopped for 0.25 seconds
+     * hoodEncoder.setMaxPeriod(0.25);
+     * 
+     * // Sets the motor to begin rotating until it stops
+     * while (!hoodEncoder.getStopped()) {
+     * hoodMotor.set(-0.25);
+     * }
+     * // Resets the encoder once the motor has stopped
+     * while (hoodEncoder.getStopped()) {
+     * hoodMotor.set(0);
+     * hoodEncoder.reset();
+     * currentHoodAngle = 0;
+     * }
+     * }
+     */
 
-        // Sets the motor to begin rotating until it stops
-        while (!hoodEncoder.getStopped()) {
-            hoodMotor.set(-0.25);
-        }
-        // Resets the encoder once the motor has stopped
-        while (hoodEncoder.getStopped()) {
-            hoodMotor.set(0);
-            hoodEncoder.reset();
-            currentHoodAngle = 0;
-        }
+    public void resetEncoders() {
+        leftEncoder.reset();
+        rightEncoder.reset();
+        hoodEncoder.reset();
+        articulatingEncoder.reset();
+        extendingEncoder.reset();
     }
 }
