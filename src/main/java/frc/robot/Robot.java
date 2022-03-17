@@ -22,6 +22,8 @@ add hood to limelight code, set up encoder values
 
 package frc.robot;
 
+import java.util.List;
+
 import com.ctre.phoenix.motorcontrol.can.WPI_VictorSPX;
 
 import edu.wpi.first.wpilibj.Counter;
@@ -36,14 +38,25 @@ import edu.wpi.first.wpilibj.motorcontrol.MotorControllerGroup;
 import edu.wpi.first.wpilibj.motorcontrol.PWMSparkMax;
 import edu.wpi.first.wpilibj.motorcontrol.Spark;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
+import edu.wpi.first.wpilibj2.command.Command;
+import edu.wpi.first.wpilibj2.command.RamseteCommand;
+import edu.wpi.first.wpilibj2.command.Subsystem;
 import edu.wpi.first.wpilibj2.command.button.Button;
 import edu.wpi.first.wpilibj2.command.button.NetworkButton;
 import edu.wpi.first.wpilibj2.command.button.Trigger;
+import edu.wpi.first.math.controller.PIDController;
+import edu.wpi.first.math.controller.RamseteController;
+import edu.wpi.first.math.controller.SimpleMotorFeedforward;
 import edu.wpi.first.math.geometry.Pose2d;
+import edu.wpi.first.math.geometry.Rotation2d;
+import edu.wpi.first.math.geometry.Translation2d;
 import edu.wpi.first.math.kinematics.DifferentialDriveKinematics;
 import edu.wpi.first.math.kinematics.DifferentialDriveOdometry;
 import edu.wpi.first.math.kinematics.DifferentialDriveWheelSpeeds;
-import edu.wpi.first.math.util.Units;
+import edu.wpi.first.math.trajectory.Trajectory;
+import edu.wpi.first.math.trajectory.TrajectoryConfig;
+import edu.wpi.first.math.trajectory.TrajectoryGenerator;
+import edu.wpi.first.math.trajectory.constraint.DifferentialDriveVoltageConstraint;
 import edu.wpi.first.networktables.NetworkTable;
 import edu.wpi.first.networktables.NetworkTableEntry;
 import edu.wpi.first.networktables.NetworkTableInstance;
@@ -52,7 +65,6 @@ import com.revrobotics.CANSparkMaxLowLevel.MotorType;
 import com.revrobotics.SparkMaxRelativeEncoder;
 import com.revrobotics.RelativeEncoder;
 import com.revrobotics.SparkMaxPIDController;
-import edu.wpi.first.wpilibj.interfaces.Gyro;
 
 import com.kauailabs.navx.frc.AHRS;
 import edu.wpi.first.wpilibj.SPI;
@@ -72,30 +84,47 @@ public class Robot extends TimedRobot {
     private static final double EXTCLIMBERSPEED = 0.75;
     private static final double ARTCLIMBERSPEED = 0.25;
 
-    private static final double CLOSEDISTANCE = 114;
-    private static final double MIDDISTANCE = 174;
-    private static final double FARDISTANCE = 228;
+    public static final double CLOSEDISTANCE = 114;
+    public static final double MIDDISTANCE = 174;
+    public static final double FARDISTANCE = 228;
 
-    private static final double SET_CLOSE_ANGLE = 0.0;
-    private static final double SET_MID_ANGLE = .000002;
-    private static final double SET_FAR_ANGLE = .000004;
+    public static final double SET_CLOSE_ANGLE = 0.0;
+    public static final double SET_MID_ANGLE = .000002;
+    public static final double SET_FAR_ANGLE = .000004;
 
-    private static final double CHASSISWHEELWIDTH = 20; // inches
+    // the autonomous garbage
+    // public static final double CHASSISWHEELWIDTH = Units.inchesToMeters(20); //
+    // inches but now meters
+    public static final double KSVOLTS = 0.22;
+    public static final double KVVOLTSECONDSPERMETER = 1.98;
+    public static final double KAVOLTSECONDSSQUAREDPERMETER = 0.2;
+    public static final double kMaxSpeedMetersPerSecond = 3;
+    public static final double kMaxAccelerationMetersPerSecondSquared = 3;
+
+    // Reasonable baseline values for a RAMSETE follower, meters & seconds
+    public static final double kRamseteB = 2;
+    public static final double kRamseteZeta = 0.7;
+    public static final double kPDriveVel = 8.5;
+    public static final int kEncoderCPR = 1024;
+    public static final double kWheelDiameterMeters = 0.15;
+    public static final double kEncoderDistancePerPulse =
+            // Assumes the encoders are directly mounted on the wheel shafts
+            (kWheelDiameterMeters * Math.PI) / (double) kEncoderCPR;
 
     // PID Coefficients
     // Don't touch
-    private static final double PID_P = .009; // was 0.01, better at .009
-    private static final double PID_I = 0;
-    private static final double PID_D = 0;
-    private static final double PID_IZ = 0;
-    private static final double PID_FF = 0.00001; // was 0.0, better at 0.00001
-    private static final double PID_MAXOUTPUT = 1;
-    private static final double PID_MINOUTPUT = -1;
+    public static final double PID_P = .009; // was 0.01, better at .009
+    public static final double PID_I = 0;
+    public static final double PID_D = 0;
+    public static final double PID_IZ = 0;
+    public static final double PID_FF = 0.00001; // was 0.0, better at 0.00001
+    public static final double PID_MAXOUTPUT = 1;
+    public static final double PID_MINOUTPUT = -1;
 
     // Joysticks
     private final Joystick joyE = new Joystick(0);
-    private final Joystick joyL = new Joystick(2);
-    private final Joystick joyR = new Joystick(1);
+    private final Joystick joyL = new Joystick(1);
+    private final Joystick joyR = new Joystick(2);
 
     // Motor Controllers
     private final WPI_VictorSPX frontLeftMotor = new WPI_VictorSPX(9);
@@ -117,8 +146,8 @@ public class Robot extends TimedRobot {
     private final RelativeEncoder shooterEncoder = shooterMotor.getEncoder();
     private final Encoder articulatingEncoder = new Encoder(5, 6);
     private final Encoder extendingEncoder = new Encoder(7, 8);
-    private final Encoder leftEncoder = new Encoder(1, 2, false); // not inverted
-    private final Encoder rightEncoder = new Encoder(3, 4, true); // inverted
+    private final Encoder leftEncoder = new Encoder(1, 2, true); // inverted
+    private final Encoder rightEncoder = new Encoder(3, 4, false); // not inverted
 
     // Gyroscope
     AHRS gyro = new AHRS(SPI.Port.kMXP);
@@ -127,12 +156,16 @@ public class Robot extends TimedRobot {
     private final MotorControllerGroup leftMotorGroup = new MotorControllerGroup(frontLeftMotor, backLeftMotor);
     private final MotorControllerGroup rightMotorGroup = new MotorControllerGroup(frontRightMotor, backRightMotor);
     private final DifferentialDrive robotDrive = new DifferentialDrive(leftMotorGroup, rightMotorGroup);
+    // private final DriveSubsystem robotDriveSubsystem = new DriveSubsystem();
     private final MotorControllerGroup extendingClimbers = new MotorControllerGroup(topExtendingClimber,
             bottomExtendingClimber);
     private final MotorControllerGroup articulatingClimbers = new MotorControllerGroup(topArticulatingClimber,
             bottomArticulatingClimber);
 
-    private final DifferentialDriveOdometry odometry = new DifferentialDriveOdometry(gyro.getRotation2d());
+    // private final DifferentialDriveOdometry odometry = new
+    // DifferentialDriveOdometry(gyro.getRotation2d());
+    // private final DifferentialDriveKinematics kinematics = new
+    // DifferentialDriveKinematics(CHASSISWHEELWIDTH);
 
     // Limelight
     private NetworkTable table = NetworkTableInstance.getDefault().getTable("limelight");
@@ -179,58 +212,64 @@ public class Robot extends TimedRobot {
         articulatingEncoder.reset();
         extendingEncoder.reset();
 
-        leftEncoder.setDistancePerPulse(10);
-        rightEncoder.setDistancePerPulse(10);
+        // leftEncoder.setDistancePerPulse(10);
+        // rightEncoder.setDistancePerPulse(10);
 
         resetEncoders();
     }
 
-    @Override
-    public void autonomousInit() {
+    // public Command getAutonomousCommand() {
 
-    }
+    // // Create a voltage constraint to ensure we don't accelerate too fast
+    // var autoVoltageConstraint = new DifferentialDriveVoltageConstraint(
+    // new SimpleMotorFeedforward(
+    // Constants.KSVOLTS,
+    // Constants.KVVOLTSECONDSPERMETER,
+    // Constants.KAVOLTSECONDSSQUAREDPERMETER),
+    // kinematics,
+    // 10);
 
-    @Override
-    public void autonomousPeriodic() {
-        odometry.update(gyro.getRotation2d(), leftEncoder.getDistance(), rightEncoder.getDistance());
-    }
+    // // Create config for trajectory
+    // TrajectoryConfig config = new TrajectoryConfig(
+    // Constants.kMaxSpeedMetersPerSecond,
+    // Constants.kMaxAccelerationMetersPerSecondSquared)
+    // // Add kinematics to ensure max speed is actually obeyed
+    // .setKinematics(kinematics)
+    // // Apply the voltage constraint
+    // .addConstraint(autoVoltageConstraint);
 
-    public Pose2d getPose() {
-        return odometry.getPoseMeters();
-    }
+    // // An example trajectory to follow. All units in meters.
+    // Trajectory exampleTrajectory = TrajectoryGenerator.generateTrajectory(
+    // // Start at the origin facing the +X direction
+    // new Pose2d(0, 0, new Rotation2d(0)),
+    // // Pass through these two interior waypoints, making an 's' curve path
+    // List.of(new Translation2d(1, 1), new Translation2d(2, -1)),
+    // // End 3 meters straight ahead of where we started, facing forward
+    // new Pose2d(3, 0, new Rotation2d(0)),
+    // // Pass config
+    // config);
 
-    public DifferentialDriveWheelSpeeds getWheelSpeeds() {
-        return new DifferentialDriveWheelSpeeds(leftEncoder.getRate(), rightEncoder.getRate());
-    }
+    // RamseteCommand ramseteCommand = new RamseteCommand(exampleTrajectory,
+    // robotDriveSubsystem::getPose,
+    // new RamseteController(Constants.kRamseteB, Constants.kRamseteZeta),
+    // new SimpleMotorFeedforward(Constants.KSVOLTS,
+    // Constants.KVVOLTSECONDSPERMETER,
+    // Constants.KAVOLTSECONDSSQUAREDPERMETER),
+    // kinematics,
+    // robotDriveSubsystem::getWheelSpeeds,
+    // new PIDController(Constants.kPDriveVel, 0, 0), new
+    // PIDController(Constants.kPDriveVel, 0, 0),
+    // robotDriveSubsystem::tankDriveVolts, robotDriveSubsystem);
 
-    public void resetOdometry(Pose2d pose) {
-        resetEncoders();
-        odometry.resetPosition(pose, gyro.getRotation2d());
-    }
+    // // Reset odometry to the starting pose of the trajectory.
+    // robotDriveSubsystem.resetOdometry(exampleTrajectory.getInitialPose());
 
-    public void arcadeDrive(double fwd, double rot) {
-        robotDrive.arcadeDrive(fwd, rot);
-    }
+    // // Run path following command, then stop at the end.
+    // return ramseteCommand.andThen(() -> robotDrive.tankDrive(0, 0));
+    // }
 
-    public void tankDriveVolts(double leftVolts, double rightVolts) {
-        leftMotorGroup.setVoltage(leftVolts);
-        rightMotorGroup.setVoltage(rightVolts);
-        robotDrive.feed();
-    }
-
-    public double getAverageEncoderDistance = (leftEncoder.getDistance() + rightEncoder.getDistance()) / 2.0;
-
-    public void setMaxOutput(double maxOutput) {
-        robotDrive.setMaxOutput(maxOutput);
-    }
-
-    /** Zeroes the heading of the robot. */
-    public void zeroHeading() {
-        gyro.reset();
-    }
-
-    double getHeading = gyro.getRotation2d().getDegrees();
-    double getTurnRate = -gyro.getRate();
+    // double getHeading = gyro.getRotation2d().getDegrees();
+    // double getTurnRate = -gyro.getRate();
 
     @Override
     public void teleopInit() {
@@ -244,7 +283,7 @@ public class Robot extends TimedRobot {
     @Override
     public void teleopPeriodic() {
 
-        SmartDashboard.putNumber("Flap Encoder", (currentHoodAngle / (1000000 * 360)));
+        SmartDashboard.putNumber("Flap Encoder", (currentHoodAngle / (1000 * 360)));
         SmartDashboard.putNumber("Articulating Encoder", articulatingEncoder.getDistance());
         SmartDashboard.putNumber("Extending Encoder", extendingEncoder.getDistance());
 
@@ -327,8 +366,8 @@ public class Robot extends TimedRobot {
         }
 
         // Fancy Ternary Operators heck yeah
-        leftHalfSpeed = halfsiesL ? 0.5 : 0;
-        rightHalfSpeed = halfsiesR ? 0.5 : 0;
+        leftHalfSpeed = halfsiesL ? 0.5 : 1;
+        rightHalfSpeed = halfsiesR ? 0.5 : 1;
 
         // Drivetrain Controls: left and right joysticks
         if (Math.abs(joyL.getY()) > DEADZONE || Math.abs(joyR.getY()) > DEADZONE) {
