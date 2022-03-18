@@ -24,6 +24,8 @@ package frc.robot;
 
 import java.util.List;
 
+import javax.tools.ForwardingFileObject;
+
 import com.ctre.phoenix.motorcontrol.can.WPI_VictorSPX;
 
 import edu.wpi.first.wpilibj.Counter;
@@ -88,9 +90,10 @@ public class Robot extends TimedRobot {
     public static final double MIDDISTANCE = 174;
     public static final double FARDISTANCE = 228;
 
-    public static final double SET_CLOSE_ANGLE = 0.0;
-    public static final double SET_MID_ANGLE = .000002;
-    public static final double SET_FAR_ANGLE = .000004;
+    public static final double CLOSE_ANGLE = 0.0;
+    public static final double MID_ANGLE = 5.158;
+    public static final double FAR_ANGLE = 16.453;
+    public static final double FLAP_DEADZONE = 0.1;
 
     // the autonomous garbage
     // public static final double CHASSISWHEELWIDTH = Units.inchesToMeters(20); //
@@ -113,17 +116,17 @@ public class Robot extends TimedRobot {
 
     // PID Coefficients
     // Don't touch
-    public static final double PID_P = .009; // was 0.01, better at .009
+    public static final double PID_P = .006; // was 0.01, better at .009
     public static final double PID_I = 0;
     public static final double PID_D = 0;
     public static final double PID_IZ = 0;
-    public static final double PID_FF = 0.00001; // was 0.0, better at 0.00001
+    public static final double PID_FF = 0.00011; // was 0.0, better at 0.00001
     public static final double PID_MAXOUTPUT = 1;
     public static final double PID_MINOUTPUT = -1;
 
     // Joysticks
-    private final Joystick joyE = new Joystick(0);
-    private final Joystick joyL = new Joystick(1);
+    private final Joystick joyE = new Joystick(1);
+    private final Joystick joyL = new Joystick(0);
     private final Joystick joyR = new Joystick(2);
 
     // Motor Controllers
@@ -142,7 +145,7 @@ public class Robot extends TimedRobot {
 
     private final SparkMaxPIDController shooterPID = shooterMotor.getPIDController();
 
-    private final Counter hoodEncoder = new Counter(new DigitalInput(9));
+    private final Counter flapEncoder = new Counter(new DigitalInput(9));
     private final RelativeEncoder shooterEncoder = shooterMotor.getEncoder();
     private final Encoder articulatingEncoder = new Encoder(5, 6);
     private final Encoder extendingEncoder = new Encoder(7, 8);
@@ -174,18 +177,13 @@ public class Robot extends TimedRobot {
     double limelightLeftSteer = 0.0;
     double limelightRightSteer = 0.0;
 
-    // Hood Values
-    double desiredHoodAngle = SET_MID_ANGLE;
-    double currentHoodAngle = 0.0;
-
-    // Climber: obsolete, remove me
-    double firstButtonTime = 0.0;
-    double secondButtonTime = 0.0;
-    double thirdButtonTime = 0.0;
-    double teleopStartTime = 0.0;
+    // Flap Values
+    double desiredFlapAngle = MID_ANGLE;
+    double currentFlapAngle = 0.0;
 
     @Override
     public void robotInit() {
+
         configLimelight();
         leftMotorGroup.setInverted(true);
         rightMotorGroup.setInverted(false);
@@ -198,22 +196,9 @@ public class Robot extends TimedRobot {
         shooterPID.setFF(PID_FF);
         shooterPID.setOutputRange(PID_MINOUTPUT, PID_MAXOUTPUT);
 
-        // Set PID Coefficients to SmartDashboard
-        // SmartDashboard.putNumber("P Gain", PID_P);
-        // SmartDashboard.putNumber("I Gain", PID_I);
-        // SmartDashboard.putNumber("D Gain", PID_D);
-        // SmartDashboard.putNumber("I Zone", PID_IZ);
-        // SmartDashboard.putNumber("Feed Forward", PID_FF);
-        // SmartDashboard.putNumber("Max Output", PID_MAXOUTPUT);
-        // SmartDashboard.putNumber("Min Output", PID_MINOUTPUT);
-
-        // Resets encoders everytime the robot is powered on
-        hoodEncoder.reset();
-        articulatingEncoder.reset();
-        extendingEncoder.reset();
-
-        // leftEncoder.setDistancePerPulse(10);
-        // rightEncoder.setDistancePerPulse(10);
+        // Print PID Coefficients to SmartDashboard
+        SmartDashboard.putNumber("P Gain", PID_P);
+        SmartDashboard.putNumber("Feed Forward", PID_FF);
 
         resetEncoders();
     }
@@ -282,17 +267,18 @@ public class Robot extends TimedRobot {
 
     @Override
     public void teleopPeriodic() {
+        SmartDashboard.putNumber("Flap Distance?", flapEncoder.getDistance());
 
-        SmartDashboard.putNumber("Flap Encoder", (currentHoodAngle / (1000 * 360)));
+        SmartDashboard.putNumber("Flap Encoder", (currentFlapAngle / 360));
         SmartDashboard.putNumber("Articulating Encoder", articulatingEncoder.getDistance());
         SmartDashboard.putNumber("Extending Encoder", extendingEncoder.getDistance());
 
         // Set PID Coefficients
-        shooterPID.setP(PID_P);
+        shooterPID.setP(SmartDashboard.getNumber("P Gain", PID_P));
         shooterPID.setI(PID_I);
         shooterPID.setD(PID_D);
         shooterPID.setIZone(PID_IZ);
-        shooterPID.setFF(PID_FF);
+        shooterPID.setFF(SmartDashboard.getNumber("Feed Forward", PID_FF));
         shooterPID.setOutputRange(PID_MINOUTPUT, PID_MAXOUTPUT);
 
         // Buttons
@@ -352,17 +338,12 @@ public class Robot extends TimedRobot {
         // Hood Adjustment Manual
         if (hoodAdjustForward) {
             hoodMotor.set(0.5);
-            currentHoodAngle += hoodEncoder.get();
+            currentFlapAngle += flapEncoder.get();
         } else if (hoodAdjustBackward) {
             hoodMotor.set(-0.5);
-            currentHoodAngle -= hoodEncoder.get();
+            currentFlapAngle -= flapEncoder.get();
         } else {
             hoodMotor.set(0);
-        }
-
-        // Hood Encoder Reset Manual? Except it doesn't always seem to work
-        if (currentHoodAngle < 0) {
-            currentHoodAngle = 0;
         }
 
         // Fancy Ternary Operators heck yeah
@@ -383,12 +364,15 @@ public class Robot extends TimedRobot {
 
             robotDrive.tankDrive(limelightLeftSteer, limelightRightSteer);
         }
-
+        adjustLimelightFlapAngle(limelightDistance);
         // Shooting Motor Controls
         if (limelightShootButton) {
             // Sets shooting motor PID to limelight's calculated RPM value when enabled
             shooterPID.setReference(desiredShooterRPM,
                     CANSparkMax.ControlType.kVelocity);
+            adjustLimelightFlapAngle(limelightDistance);
+            SmartDashboard.putNumber("Current Flap Angle", currentFlapAngle);
+            SmartDashboard.putNumber("Desired Flap Angle", desiredFlapAngle);
         } else if (spinShooterButton) {
             // Else uses value from operator control
             shooterMotor.set(shooterSpeedManual);
@@ -421,50 +405,6 @@ public class Robot extends TimedRobot {
             bottomCollectorMotor.set(0);
         }
 
-        // Articulating Climber: set at an angle (not vertical) to grab bar
-        // Extending Climber: starts fully extended to pull us onto bar
-        if (firstButton) {
-            if (extendingEncoder.getDistance() > EXTPULLUP) {
-                extendingClimbers.set(-EXTCLIMBERSPEED);
-            } else {
-                extendingClimbers.set(0);
-            }
-
-            if (extendingEncoder.getDistance() > (EXTPULLUP - 20) && articulatingEncoder.getDistance() < 0) {
-                articulatingClimbers.set(ARTCLIMBERSPEED);
-            } else {
-                articulatingClimbers.set(0);
-            }
-        }
-
-        if (secondButton) {
-            while (articulatingEncoder.getDistance() < ARTROTATETOGRAB) {
-                articulatingClimbers.set(ARTCLIMBERSPEED);
-            }
-            while (articulatingEncoder.getDistance() < (ARTROTATETOGRAB - 15)) {
-                extendingClimbers.set(EXTCLIMBERSPEED);
-            }
-
-        }
-
-        // Articulating Climber Controls [MANUAL]: operator buttons 5 & 3
-        if (articulatingClimberButton) {
-            articulatingClimbers.set(ARTCLIMBERSPEED);
-        } else if (articulatingClimberOtherwayButton) {
-            articulatingClimbers.set(-ARTCLIMBERSPEED);
-        } else {
-            articulatingClimbers.set(0);
-        }
-
-        // Extending Climber Winch Controls [MANUAL]: operator buttons 6 & 4
-        if (windClimberButton) {
-            extendingClimbers.set(EXTCLIMBERSPEED);
-        } else if (unwindClimberButton) {
-            extendingClimbers.set(-EXTCLIMBERSPEED);
-        } else {
-            extendingClimbers.set(0);
-        }
-
     }
 
     public double limelightSteeringAlign(boolean limelightAlignButtonL, boolean limelightAlignButtonR,
@@ -484,7 +424,6 @@ public class Robot extends TimedRobot {
         return limelightAlignmentAdjust;
     }
 
-    // TODO: set up method for adjust hood according to limelight distance
     public double calculateLimelightDistance(double limelightTY) {
         final double limelightMountingHeight = 24; // inches
         final double limelightMountingAngle = 32.5; // degrees rotated back from vertical apparently
@@ -516,29 +455,31 @@ public class Robot extends TimedRobot {
         return limelightShootingRPM;
     }
 
-    public double calculateLimelightHoodAngle(double limelightDistance) {
+    public double adjustLimelightFlapAngle(double limelightDistance) {
         if (limelightDistance <= CLOSEDISTANCE) {
-            desiredHoodAngle = SET_CLOSE_ANGLE;
-        } else if (limelightDistance <= MIDDISTANCE) {
-            desiredHoodAngle = SET_MID_ANGLE;
-        } else if (limelightDistance <= FARDISTANCE) {
-            desiredHoodAngle = SET_FAR_ANGLE;
-        } else {
-            desiredHoodAngle = SET_MID_ANGLE;
-        }
-        return desiredHoodAngle;
-    }
+            desiredFlapAngle = CLOSE_ANGLE;
+            startFlapAngle = currentFlapAngle;
+            startFlapEncoder = flapEncoder.get();
+            desiredFlapEncoder = startFlapEncoder + desiredFlapAngle;
+            flapUp();
 
-    private void adjustLimelightHoodAngle() {
-        if (currentHoodAngle < desiredHoodAngle) {
-            hoodMotor.set(0.25);
-            currentHoodAngle += hoodEncoder.get();
-        } else if (currentHoodAngle > desiredHoodAngle) {
-            hoodMotor.set(-0.25);
-            currentHoodAngle -= hoodEncoder.get();
-        } else {
-            hoodMotor.set(0);
+        } else if (limelightDistance <= MIDDISTANCE) {
+            desiredFlapAngle = MID_ANGLE;
+            startFlapAngle = currentFlapAngle;
+            startFlapEncoder = flapEncoder.get();
+            desiredFlapEncoder = startFlapEncoder + desiredFlapAngle;
+
+            flapMid();
+
+        } else if (limelightDistance <= FARDISTANCE) {
+            desiredFlapAngle = FAR_ANGLE;
+            startFlapAngle = currentFlapAngle;
+            startFlapEncoder = flapEncoder.get();
+            desiredFlapEncoder = startFlapEncoder + desiredFlapAngle;
+
+            flapDown();
         }
+        return desiredFlapAngle;
     }
 
     public void configLimelight() {
@@ -573,8 +514,45 @@ public class Robot extends TimedRobot {
     public void resetEncoders() {
         leftEncoder.reset();
         rightEncoder.reset();
-        hoodEncoder.reset();
+        flapEncoder.reset();
         articulatingEncoder.reset();
         extendingEncoder.reset();
+    }
+
+    double startFlapAngle = 0;
+    double startFlapEncoder = 0;
+    double desiredFlapEncoder = 0;
+
+    public void flapUp() {
+        if (flapEncoder.get() < (CLOSE_ANGLE - FLAP_DEADZONE)) {
+            hoodMotor.set(0.5);
+            currentFlapAngle = startFlapAngle + flapEncoder.get() - startFlapEncoder;
+        } else if (flapEncoder.get() > (CLOSE_ANGLE + FLAP_DEADZONE)) {
+            hoodMotor.set(-0.5);
+            currentFlapAngle = startFlapAngle + startFlapEncoder - flapEncoder.get();
+        } else {
+            hoodMotor.set(0);
+            currentFlapAngle = 0;
+        }
+    }
+
+    public void flapMid() {
+        if (flapEncoder.get() < (MID_ANGLE - FLAP_DEADZONE)) {
+            hoodMotor.set(0.5);
+            currentFlapAngle = startFlapAngle + flapEncoder.get() - startFlapEncoder;
+        } else if (flapEncoder.get() > (MID_ANGLE + FLAP_DEADZONE)) {
+            hoodMotor.set(-0.5);
+            currentFlapAngle = startFlapAngle + startFlapEncoder - flapEncoder.get();
+        }
+    }
+
+    public void flapDown() {
+        if (flapEncoder.get() < (FAR_ANGLE - FLAP_DEADZONE)) {
+            hoodMotor.set(0.5);
+            currentFlapAngle = startFlapAngle + flapEncoder.get() - startFlapEncoder;
+        } else if (flapEncoder.get() > (FAR_ANGLE + FLAP_DEADZONE)) {
+            hoodMotor.set(-0.5);
+            currentFlapAngle = startFlapAngle + startFlapEncoder - flapEncoder.get();
+        }
     }
 }
