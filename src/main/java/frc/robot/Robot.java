@@ -22,12 +22,14 @@ add hood to limelight code, set up encoder values
 
 package frc.robot;
 
+import java.nio.file.attribute.FileStoreAttributeView;
 import java.util.List;
 import java.util.PrimitiveIterator;
 
 import javax.tools.ForwardingFileObject;
 
 import com.ctre.phoenix.motorcontrol.can.WPI_VictorSPX;
+import com.fasterxml.jackson.databind.introspect.DefaultAccessorNamingStrategy.FirstCharBasedValidator;
 
 import edu.wpi.first.wpilibj.Counter;
 import edu.wpi.first.wpilibj.DigitalInput;
@@ -95,6 +97,7 @@ public class Robot extends TimedRobot {
     public static final double MIDDISTANCE = 174;
     public static final double FARDISTANCE = 228;
 
+    // Flap constants
     public static final double CLOSE_ANGLE = 0.0;
     public static final double MID_ANGLE = 5.158;
     public static final double FAR_ANGLE = 16.453;
@@ -292,10 +295,10 @@ public class Robot extends TimedRobot {
         shooterPID.setOutputRange(PID_MINOUTPUT, PID_MAXOUTPUT);
 
         // Buttons
-        boolean halfsiesL = joyL.getRawButton(TRIGGER);
-        boolean halfsiesR = joyR.getRawButton(TRIGGER);
-        boolean initialCollectionLButton = joyL.getRawButton(THUMBBUTTON);
-        boolean initialCollectionRButton = joyR.getRawButton(THUMBBUTTON);
+        boolean halfsiesL = joyL.getRawButton(THUMBBUTTON);
+        boolean halfsiesR = joyR.getRawButton(THUMBBUTTON);
+        boolean initialCollectionLButton = joyL.getRawButton(TRIGGER);
+        boolean initialCollectionRButton = joyR.getRawButton(TRIGGER);
         boolean feederCollectionButton = joyE.getRawButton(THUMBBUTTON);
         boolean hoodAdjustForward = joyE.getRawButton(12);
         SmartDashboard.putBoolean("hoodAdjustForward", hoodAdjustForward);
@@ -304,6 +307,7 @@ public class Robot extends TimedRobot {
         boolean ejectButtonL = joyL.getRawButton(3);
         boolean ejectButtonR = joyR.getRawButton(3);
         boolean resetHoodDegreesTest = joyL.getRawButton(6);
+        boolean stopFlap = joyE.getRawButton(5);
 
         // Limelight Buttons
         boolean limelightAlignButtonL = joyL.getRawButton(4);
@@ -311,19 +315,17 @@ public class Robot extends TimedRobot {
         boolean limelightShootButton = joyE.getRawButton(TRIGGER);
 
         // Manual Climber Buttons
-        boolean articulatingClimberButton = joyE.getRawButton(5);
-        boolean articulatingClimberOtherwayButton = joyE.getRawButton(3);
+        boolean articulatingClimberButton = joyE.getRawButton(3);
         boolean windClimberButton = joyE.getRawButton(6);
         boolean unwindClimberButton = joyE.getRawButton(4);
 
-        // Automated Climber Buttons: obsolete
+        // Automated Climber Buttons
         boolean firstButton = joyE.getRawButton(11);
         boolean secondButton = joyE.getRawButton(8);
         boolean thirdButton = joyE.getRawButton(7);
 
         // Driving Variables
-        double leftHalfSpeed = 0;
-        double rightHalfSpeed = 0;
+        double halfSpeed = 1;
 
         // Updating Variables
         double shooterSpeedManual = (joyE.getRawAxis(3) / 4) + 0.75; // converts [-1, 1] to [-1/4, 1/4] to [0.5, 1]
@@ -340,24 +342,28 @@ public class Robot extends TimedRobot {
 
         SmartDashboard.putBoolean("Valid Target?", limelightHasTarget);
 
-        // Hood Adjustment Manual
-        if (hoodAdjustForward) {
-            hoodMotor.set(0.5);
-            currentFlapAngle += flapEncoder.get();
-        } else if (hoodAdjustBackward) {
-            hoodMotor.set(-0.5);
-            currentFlapAngle -= flapEncoder.get();
-        } else {
+        if (stopFlap) {
             hoodMotor.set(0);
         }
 
+        // Hood Adjustment Manual
+        if (hoodAdjustForward) {
+            hoodMotor.set(0.5);
+            // currentFlapAngle += flapEncoder.get();
+        } else if (hoodAdjustBackward) {
+            hoodMotor.set(-0.5);
+            // currentFlapAngle -= flapEncoder.get();
+        } else {
+            if (!movingFlap) {
+                hoodMotor.set(0);
+            }
+        }
         // Fancy Ternary Operators heck yeah
-        leftHalfSpeed = halfsiesL ? 0.5 : 1;
-        rightHalfSpeed = halfsiesR ? 0.5 : 1;
+        halfSpeed = halfsiesL || halfsiesR ? 0.5 : 1;
 
         // Drivetrain Controls: left and right joysticks
         if (Math.abs(joyL.getY()) > DEADZONE || Math.abs(joyR.getY()) > DEADZONE) {
-            robotDrive.tankDrive(joyL.getY() * SPEED_MOD * leftHalfSpeed, joyR.getY() * SPEED_MOD * rightHalfSpeed);
+            robotDrive.tankDrive(joyL.getY() * SPEED_MOD * halfSpeed, joyR.getY() * SPEED_MOD * halfSpeed);
         } else {
             robotDrive.tankDrive(0, 0);
         }
@@ -377,12 +383,11 @@ public class Robot extends TimedRobot {
                     CANSparkMax.ControlType.kVelocity);
             adjustLimelightFlapAngle(limelightDistance);
         } else {
-            shooterPID.setReference(3000, CANSparkMax.ControlType.kVelocity);
-            // TODO: take me out to allow for manual adjusting
+            if (!articulatingClimberButton && !windClimberButton && !unwindClimberButton) {
+                shooterMotor.set(0);
+                // shooterPID.setReference(3000, CANSparkMax.ControlType.kVelocity);
+            }
         }
-        SmartDashboard.putNumber("Current Flap Angle", currentFlapAngle);
-        SmartDashboard.putNumber("Desired Flap Angle", desiredFlapAngle);
-        SmartDashboard.putBoolean("Moving flap", movingFlap);
 
         boolean RPMinRange = (Math.abs(desiredShooterRPM - shooterEncoder.getVelocity()) < 75);
 
@@ -410,20 +415,17 @@ public class Robot extends TimedRobot {
 
         // Articulating Climber Controls [MANUAL]: operator buttons 5 & 3
         if (articulatingClimberButton) {
-            articulatingClimbers.set(articulatingClimberSpeed);
-            shooterMotor.set(0);
-        } else if (articulatingClimberOtherwayButton) {
-            articulatingClimbers.set(-articulatingClimberSpeed);
+            articulatingClimbers.set(joyE.getY() * ARTCLIMBERSPEED);
             shooterMotor.set(0);
         } else {
             articulatingClimbers.set(0);
         }
         // Extending Climber Winch Controls [MANUAL]: operator buttons 6 & 4
         if (windClimberButton) {
-            extendingClimbers.set(extendingClimberSpeed);
+            extendingClimbers.set(EXTCLIMBERSPEED);
             shooterMotor.set(0);
         } else if (unwindClimberButton) {
-            extendingClimbers.set(-extendingClimberSpeed);
+            extendingClimbers.set(-EXTCLIMBERSPEED);
             shooterMotor.set(0);
         } else {
             extendingClimbers.set(0);
@@ -480,29 +482,40 @@ public class Robot extends TimedRobot {
     }
 
     public void adjustLimelightFlapAngle(double limelightDistance) {
+        if (movingFlap) {
+            flapMotion();
+        } else {
+            hoodMotor.set(0.5);
+            movingFlap = true;
+            System.out.println("starting hood motor");
+        }
+
         if (!movingFlap) {
+            startFlapAngle = currentFlapAngle;
+            startFlapEncoder = flapEncoder.get();
+            int flapDirection = 1;
+
             if (limelightDistance <= CLOSEDISTANCE) {
                 desiredFlapAngle = CLOSE_ANGLE;
-                startFlapAngle = currentFlapAngle;
-                startFlapEncoder = flapEncoder.get();
-                desiredFlapEncoder = startFlapEncoder + Math.abs(startFlapAngle - desiredFlapAngle);
-                flapUp();
-
             } else if (limelightDistance <= MIDDISTANCE) {
                 desiredFlapAngle = MID_ANGLE;
-                startFlapAngle = currentFlapAngle;
-                startFlapEncoder = flapEncoder.get();
-                desiredFlapEncoder = startFlapEncoder + Math.abs(startFlapAngle - desiredFlapAngle);
-                flapMid();
-
             } else if (limelightDistance <= FARDISTANCE) {
                 desiredFlapAngle = FAR_ANGLE;
-                startFlapAngle = currentFlapAngle;
-                startFlapEncoder = flapEncoder.get();
-                desiredFlapEncoder = startFlapEncoder + Math.abs(startFlapAngle - desiredFlapAngle);
-                flapDown();
             }
+            desiredFlapEncoder = startFlapEncoder + Math.abs(startFlapAngle -
+                    desiredFlapAngle);
+            if (startFlapAngle > desiredFlapAngle) {
+                flapDirection = -1;
+            } else {
+                flapDirection = 1;
+            }
+            hoodMotor.set(0.5 * flapDirection);
             movingFlap = true;
+
+            SmartDashboard.putNumber("Current ANGLE", currentFlapAngle);
+            SmartDashboard.putNumber("Desired ANGLE", desiredFlapAngle);
+            SmartDashboard.putNumber("Start ENCODER", startFlapEncoder);
+            SmartDashboard.putNumber("Desired ENCODER", desiredFlapEncoder);
         } else {
             flapMotion();
         }
@@ -519,24 +532,6 @@ public class Robot extends TimedRobot {
         table.getEntry("snapshot").setNumber(0);
     }
 
-    /*
-     * public void hoodResetMethod() {
-     * // Sets the max period to be stopped for 0.25 seconds
-     * hoodEncoder.setMaxPeriod(0.25);
-     * 
-     * // Sets the motor to begin rotating until it stops
-     * while (!hoodEncoder.getStopped()) {
-     * hoodMotor.set(-0.25);
-     * }
-     * // Resets the encoder once the motor has stopped
-     * while (hoodEncoder.getStopped()) {
-     * hoodMotor.set(0);
-     * hoodEncoder.reset();
-     * currentHoodAngle = 0;
-     * }
-     * }
-     */
-
     public void resetEncoders() {
         leftEncoder.reset();
         rightEncoder.reset();
@@ -545,63 +540,16 @@ public class Robot extends TimedRobot {
         extendingEncoder.reset();
     }
 
-    public void flapUp() {
-        SmartDashboard.putNumber("Encoder", flapEncoder.get());
-        SmartDashboard.putNumber("Desired Encoder", desiredFlapEncoder);
-        if (flapEncoder.get() < (desiredFlapEncoder - FLAP_DEADZONE)) {
-            hoodMotor.set(0.5);
-            currentFlapAngle = startFlapAngle + flapEncoder.get() - startFlapEncoder;
-        } else if (flapEncoder.get() > (desiredFlapEncoder + FLAP_DEADZONE)) {
-            hoodMotor.set(-0.5);
-            currentFlapAngle = startFlapAngle + startFlapEncoder - flapEncoder.get();
-        } else {
-            hoodMotor.set(0);
-            currentFlapAngle = CLOSE_ANGLE;
-            movingFlap = false;
-        }
-    }
-
-    public void flapMid() {
-        SmartDashboard.putNumber("Encoder", flapEncoder.get());
-        SmartDashboard.putNumber("Desired Encoder", desiredFlapEncoder);
-
-        if (flapEncoder.get() < (desiredFlapEncoder - FLAP_DEADZONE)) {
-            hoodMotor.set(0.5);
-            currentFlapAngle = startFlapAngle + flapEncoder.get() - startFlapEncoder;
-        } else if (flapEncoder.get() > (desiredFlapEncoder + FLAP_DEADZONE)) {
-            hoodMotor.set(-0.5);
-            currentFlapAngle = startFlapAngle + startFlapEncoder - flapEncoder.get();
-        } else {
-            hoodMotor.set(0);
-            currentFlapAngle = MID_ANGLE;
-            movingFlap = false;
-        }
-    }
-
-    public void flapDown() {
-        SmartDashboard.putNumber("Encoder", flapEncoder.get());
-        SmartDashboard.putNumber("Desired Encoder", desiredFlapEncoder);
-
-        if (flapEncoder.get() < (desiredFlapEncoder - FLAP_DEADZONE)) {
-            hoodMotor.set(0.5);
-            currentFlapAngle = startFlapAngle + flapEncoder.get() - startFlapEncoder;
-        } else if (flapEncoder.get() > (desiredFlapEncoder + FLAP_DEADZONE)) {
-            hoodMotor.set(-0.5);
-            currentFlapAngle = startFlapAngle + startFlapEncoder - flapEncoder.get();
-        } else {
-            hoodMotor.set(0);
-            currentFlapAngle = FAR_ANGLE;
-            movingFlap = false;
-        }
-    }
-
     public void flapMotion() {
-        SmartDashboard.putNumber("Encoder", flapEncoder.get());
-        SmartDashboard.putNumber("Desired Encoder", desiredFlapEncoder);
 
         if (flapEncoder.get() > desiredFlapEncoder) {
             hoodMotor.set(0);
             movingFlap = false;
+            System.out.println("stopping hood motion");
+            currentFlapAngle = desiredFlapAngle;
         }
+        System.out.println("flap encoder < desired");
+
     }
+
 }
