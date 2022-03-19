@@ -195,6 +195,8 @@ public class Robot extends TimedRobot {
     double currentFlapAngle = 0.0;
     boolean movingFlap = false;
     boolean flapAdjusted = false;
+    double flapAngle = 0;
+    double actualFlapAngle = 0;
 
     @Override
     public void robotInit() {
@@ -354,7 +356,7 @@ public class Robot extends TimedRobot {
             }
         }
         // Fancy Ternary Operators heck yeah
-        halfSpeed = halfsiesL || halfsiesR ? 0.5 : 1;
+        halfSpeed = halfsiesL || halfsiesR ? 0.75 : 1;
 
         // Drivetrain Controls: left and right joysticks
         if (Math.abs(joyL.getY()) > DEADZONE || Math.abs(joyR.getY()) > DEADZONE) {
@@ -376,6 +378,7 @@ public class Robot extends TimedRobot {
             // Sets shooting motor PID to limelight's calculated RPM value when enabled
             shooterPID.setReference(desiredShooterRPM,
                     CANSparkMax.ControlType.kVelocity);
+            flapAngleAdjustment(limelightDistance);
             if (!flapAdjusted) {
                 // adjustLimelightFlapAngle(limelightDistance);
                 flapAdjusted = true;
@@ -476,6 +479,38 @@ public class Robot extends TimedRobot {
         }
 
         return limelightShootingRPM;
+    }
+
+    public void flapAngleAdjustment(double limelightDistance) {
+        boolean flapDirection = flapEncoder.getDirection();
+        double flapGet = flapEncoder.get();
+
+        if (flapDirection && (flapGet != actualFlapAngle)) {
+            actualFlapAngle += flapEncoder.get();
+        } else if (!flapDirection && (flapGet != actualFlapAngle)) {
+            actualFlapAngle -= flapEncoder.get();
+        }
+
+        SmartDashboard.putNumber("ActualFlapAngle", actualFlapAngle);
+        SmartDashboard.putBoolean("FlapDirection", flapDirection);
+        SmartDashboard.putNumber("FlapAngle", flapAngle);
+
+        if (limelightDistance <= CLOSEDISTANCE) {
+            flapAngle = CLOSE_ANGLE;
+        } else if (limelightDistance <= MIDDISTANCE) {
+            flapAngle = MID_ANGLE;
+        } else if (limelightDistance <= FARDISTANCE) {
+            flapAngle = FAR_ANGLE;
+        }
+
+        if (flapAngle > actualFlapAngle) {
+            hoodMotor.set(0.5);
+        } else if (flapAngle < actualFlapAngle) {
+            hoodMotor.set(-0.5);
+        } else {
+            hoodMotor.set(0);
+        }
+
     }
 
     public void adjustLimelightFlapAngle(double limelightDistance) {
