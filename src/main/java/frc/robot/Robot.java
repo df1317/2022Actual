@@ -49,6 +49,7 @@ import edu.wpi.first.wpilibj2.command.Subsystem;
 import edu.wpi.first.wpilibj2.command.button.Button;
 import edu.wpi.first.wpilibj2.command.button.NetworkButton;
 import edu.wpi.first.wpilibj2.command.button.Trigger;
+import edu.wpi.first.cameraserver.CameraServer;
 import edu.wpi.first.math.controller.PIDController;
 import edu.wpi.first.math.controller.RamseteController;
 import edu.wpi.first.math.controller.SimpleMotorFeedforward;
@@ -193,9 +194,11 @@ public class Robot extends TimedRobot {
     double desiredFlapAngle = MID_ANGLE;
     double currentFlapAngle = 0.0;
     boolean movingFlap = false;
+    boolean flapAdjusted = false;
 
     @Override
     public void robotInit() {
+        CameraServer.startAutomaticCapture();
 
         configLimelight();
         leftMotorGroup.setInverted(true);
@@ -208,10 +211,6 @@ public class Robot extends TimedRobot {
         shooterPID.setIZone(PID_IZ);
         shooterPID.setFF(PID_FF);
         shooterPID.setOutputRange(PID_MINOUTPUT, PID_MAXOUTPUT);
-
-        // Print PID Coefficients to SmartDashboard
-        SmartDashboard.putNumber("P Gain", PID_P);
-        SmartDashboard.putNumber("Feed Forward", PID_FF);
 
         resetEncoders();
     }
@@ -280,18 +279,14 @@ public class Robot extends TimedRobot {
 
     @Override
     public void teleopPeriodic() {
-        SmartDashboard.putNumber("Flap Distance?", flapEncoder.getDistance());
-
-        SmartDashboard.putNumber("Flap Encoder", (currentFlapAngle / 360));
-        SmartDashboard.putNumber("Articulating Encoder", articulatingEncoder.getDistance());
-        SmartDashboard.putNumber("Extending Encoder", extendingEncoder.getDistance());
+        SmartDashboard.putNumber("Flap Encoder", flapEncoder.get());
 
         // Set PID Coefficients
-        shooterPID.setP(SmartDashboard.getNumber("P Gain", PID_P));
+        shooterPID.setP(PID_P);
         shooterPID.setI(PID_I);
         shooterPID.setD(PID_D);
         shooterPID.setIZone(PID_IZ);
-        shooterPID.setFF(SmartDashboard.getNumber("Feed Forward", PID_FF));
+        shooterPID.setFF(PID_FF);
         shooterPID.setOutputRange(PID_MINOUTPUT, PID_MAXOUTPUT);
 
         // Buttons
@@ -301,9 +296,7 @@ public class Robot extends TimedRobot {
         boolean initialCollectionRButton = joyR.getRawButton(TRIGGER);
         boolean feederCollectionButton = joyE.getRawButton(THUMBBUTTON);
         boolean hoodAdjustForward = joyE.getRawButton(12);
-        SmartDashboard.putBoolean("hoodAdjustForward", hoodAdjustForward);
         boolean hoodAdjustBackward = joyE.getRawButton(10);
-        SmartDashboard.putBoolean("hoodAdjustBackward", hoodAdjustBackward);
         boolean ejectButtonL = joyL.getRawButton(3);
         boolean ejectButtonR = joyR.getRawButton(3);
         boolean resetHoodDegreesTest = joyL.getRawButton(6);
@@ -350,9 +343,11 @@ public class Robot extends TimedRobot {
         if (hoodAdjustForward) {
             hoodMotor.set(0.5);
             // currentFlapAngle += flapEncoder.get();
+            movingFlap = false;
         } else if (hoodAdjustBackward) {
             hoodMotor.set(-0.5);
             // currentFlapAngle -= flapEncoder.get();
+            movingFlap = false;
         } else {
             if (!movingFlap) {
                 hoodMotor.set(0);
@@ -381,12 +376,15 @@ public class Robot extends TimedRobot {
             // Sets shooting motor PID to limelight's calculated RPM value when enabled
             shooterPID.setReference(desiredShooterRPM,
                     CANSparkMax.ControlType.kVelocity);
-            adjustLimelightFlapAngle(limelightDistance);
+            if (!flapAdjusted) {
+                // adjustLimelightFlapAngle(limelightDistance);
+                flapAdjusted = true;
+            }
         } else {
             if (!articulatingClimberButton && !windClimberButton && !unwindClimberButton) {
-                shooterMotor.set(0);
-                // shooterPID.setReference(3000, CANSparkMax.ControlType.kVelocity);
+                shooterPID.setReference(3000, CANSparkMax.ControlType.kVelocity);
             }
+            flapAdjusted = false;
         }
 
         boolean RPMinRange = (Math.abs(desiredShooterRPM - shooterEncoder.getVelocity()) < 75);
@@ -396,7 +394,6 @@ public class Robot extends TimedRobot {
         SmartDashboard.putNumber("Limelight Distance", calculateLimelightDistance(limelightTY));
         SmartDashboard.putNumber("Limelight RPM Value", desiredShooterRPM);
         SmartDashboard.putNumber("Actual RPM", shooterEncoder.getVelocity());
-        SmartDashboard.putNumber("Manual %", shooterSpeedManual);
 
         // Collection Controls
         if (initialCollectionLButton || initialCollectionRButton) {
@@ -485,12 +482,6 @@ public class Robot extends TimedRobot {
         if (movingFlap) {
             flapMotion();
         } else {
-            hoodMotor.set(0.5);
-            movingFlap = true;
-            System.out.println("starting hood motor");
-        }
-
-        if (!movingFlap) {
             startFlapAngle = currentFlapAngle;
             startFlapEncoder = flapEncoder.get();
             int flapDirection = 1;
@@ -501,7 +492,10 @@ public class Robot extends TimedRobot {
                 desiredFlapAngle = MID_ANGLE;
             } else if (limelightDistance <= FARDISTANCE) {
                 desiredFlapAngle = FAR_ANGLE;
+            } else {
+                System.out.println("NO DESIRED ANGLE");
             }
+            System.out.println("desired angle: " + desiredFlapAngle);
             desiredFlapEncoder = startFlapEncoder + Math.abs(startFlapAngle -
                     desiredFlapAngle);
             if (startFlapAngle > desiredFlapAngle) {
@@ -509,6 +503,7 @@ public class Robot extends TimedRobot {
             } else {
                 flapDirection = 1;
             }
+            System.out.println("setting desired flap encoder to " + desiredFlapEncoder);
             hoodMotor.set(0.5 * flapDirection);
             movingFlap = true;
 
@@ -516,8 +511,6 @@ public class Robot extends TimedRobot {
             SmartDashboard.putNumber("Desired ANGLE", desiredFlapAngle);
             SmartDashboard.putNumber("Start ENCODER", startFlapEncoder);
             SmartDashboard.putNumber("Desired ENCODER", desiredFlapEncoder);
-        } else {
-            flapMotion();
         }
     }
 
@@ -541,15 +534,14 @@ public class Robot extends TimedRobot {
     }
 
     public void flapMotion() {
-
-        if (flapEncoder.get() > desiredFlapEncoder) {
+        System.out.println("current: " + flapEncoder.get() + "; desired: " + desiredFlapEncoder);
+        if (flapEncoder.get() >= desiredFlapEncoder) {
             hoodMotor.set(0);
             movingFlap = false;
             System.out.println("stopping hood motion");
             currentFlapAngle = desiredFlapAngle;
         }
         System.out.println("flap encoder < desired");
-
     }
 
 }
