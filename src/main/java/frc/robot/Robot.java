@@ -153,7 +153,7 @@ public class Robot extends TimedRobot {
     private final WPI_VictorSPX bottomArticulatingClimber = new WPI_VictorSPX(11);
     private final WPI_VictorSPX topExtendingClimber = new WPI_VictorSPX(4); // EXT
     private final WPI_VictorSPX bottomExtendingClimber = new WPI_VictorSPX(12); // EXT2
-    private final WPI_VictorSPX hoodMotor = new WPI_VictorSPX(8);
+    private final WPI_VictorSPX flapMotor = new WPI_VictorSPX(8);
     private final CANSparkMax shooterMotor = new CANSparkMax(1, MotorType.kBrushless);
 
     private final SparkMaxPIDController shooterPID = shooterMotor.getPIDController();
@@ -195,7 +195,7 @@ public class Robot extends TimedRobot {
     double currentFlapAngle = 0.0;
     boolean movingFlap = false;
     boolean flapAdjusted = false;
-    double flapAngle = 0;
+    double limelightFlapAngle = 0;
     double actualFlapAngle = 0;
 
     @Override
@@ -338,21 +338,21 @@ public class Robot extends TimedRobot {
         SmartDashboard.putBoolean("Valid Target?", limelightHasTarget);
 
         if (stopFlap) {
-            hoodMotor.set(0);
+            flapMotor.set(0);
         }
 
         // Hood Adjustment Manual
         if (hoodAdjustForward) {
-            hoodMotor.set(0.5);
+            flapMotor.set(0.5);
             // currentFlapAngle += flapEncoder.get();
             movingFlap = false;
         } else if (hoodAdjustBackward) {
-            hoodMotor.set(-0.5);
+            flapMotor.set(-0.5);
             // currentFlapAngle -= flapEncoder.get();
             movingFlap = false;
         } else {
             if (!movingFlap) {
-                hoodMotor.set(0);
+                flapMotor.set(0);
             }
         }
         // Fancy Ternary Operators heck yeah
@@ -493,22 +493,22 @@ public class Robot extends TimedRobot {
 
         SmartDashboard.putNumber("ActualFlapAngle", actualFlapAngle);
         SmartDashboard.putBoolean("FlapDirection", flapDirection);
-        SmartDashboard.putNumber("FlapAngle", flapAngle);
+        SmartDashboard.putNumber("FlapAngle", limelightFlapAngle);
 
         if (limelightDistance <= CLOSEDISTANCE) {
-            flapAngle = CLOSE_ANGLE;
+            limelightFlapAngle = CLOSE_ANGLE;
         } else if (limelightDistance <= MIDDISTANCE) {
-            flapAngle = MID_ANGLE;
+            limelightFlapAngle = MID_ANGLE;
         } else if (limelightDistance <= FARDISTANCE) {
-            flapAngle = FAR_ANGLE;
+            limelightFlapAngle = FAR_ANGLE;
         }
 
-        if (flapAngle > actualFlapAngle) {
-            hoodMotor.set(0.5);
-        } else if (flapAngle < actualFlapAngle) {
-            hoodMotor.set(-0.5);
+        if (limelightFlapAngle > actualFlapAngle) {
+            flapMotor.set(0.5);
+        } else if (limelightFlapAngle < actualFlapAngle) {
+            flapMotor.set(-0.5);
         } else {
-            hoodMotor.set(0);
+            flapMotor.set(0);
         }
 
     }
@@ -539,7 +539,7 @@ public class Robot extends TimedRobot {
                 flapDirection = 1;
             }
             System.out.println("setting desired flap encoder to " + desiredFlapEncoder);
-            hoodMotor.set(0.5 * flapDirection);
+            flapMotor.set(0.5 * flapDirection);
             movingFlap = true;
 
             SmartDashboard.putNumber("Current ANGLE", currentFlapAngle);
@@ -571,7 +571,7 @@ public class Robot extends TimedRobot {
     public void flapMotion() {
         System.out.println("current: " + flapEncoder.get() + "; desired: " + desiredFlapEncoder);
         if (flapEncoder.get() >= desiredFlapEncoder) {
-            hoodMotor.set(0);
+            flapMotor.set(0);
             movingFlap = false;
             System.out.println("stopping hood motion");
             currentFlapAngle = desiredFlapAngle;
