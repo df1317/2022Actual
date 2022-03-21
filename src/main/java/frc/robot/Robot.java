@@ -112,8 +112,8 @@ public class Robot extends TimedRobot {
     public static final double FLAPUPTOMID = 6;
     public static final double FLAPMIDTODOWN = 8;
     public static final double FLAPUPTODOWN = 14;
-    public double LIMELIGHTFLAP = 0; // limelight's desired flap position
-    public double CURRENTFLAPPOSITION = 0; // actual position of flap
+    public double LIMELIGHTFLAP = UP; // limelight's desired flap position
+    public double CURRENTFLAPPOSITION = UP; // actual position of flap
     public double CURRENTFLAPENCODER = 0;
     public static final double UP = 1; // LIMELIGHTFLAP desired position
     public static final double MID = 2; // LIMELIGHTFLAP desired position
@@ -501,8 +501,14 @@ public class Robot extends TimedRobot {
             LIMELIGHTFLAP = DOWN;
         }
 
+        SmartDashboard.putBoolean("FLAP", CURRENTFLAPPOSITION == LIMELIGHTFLAP);
+
         if (CURRENTFLAPPOSITION != LIMELIGHTFLAP) {
+            // Gets the current encoder value at the start of adjustment
             CURRENTFLAPENCODER = flapEncoder.get();
+            SmartDashboard.putNumber("LIMELIGHTFLAP", LIMELIGHTFLAP);
+            SmartDashboard.putNumber("CURRENTFLAPPOSITION", CURRENTFLAPPOSITION);
+            SmartDashboard.putNumber("CURRENTFLAPENCODER", CURRENTFLAPENCODER);
 
             // UP
             if (LIMELIGHTFLAP == UP) {
@@ -511,15 +517,15 @@ public class Robot extends TimedRobot {
                         flapMotor.set(-0.5);
                     } else {
                         flapMotor.set(0);
+                        CURRENTFLAPPOSITION = UP;
                     }
-                    CURRENTFLAPPOSITION = UP;
                 } else if (CURRENTFLAPPOSITION == DOWN) {
                     if (flapEncoder.get() < FLAPUPTODOWN + CURRENTFLAPENCODER) {
                         flapMotor.set(-0.5);
                     } else {
                         flapMotor.set(0);
+                        CURRENTFLAPPOSITION = UP;
                     }
-                    CURRENTFLAPPOSITION = UP;
                 }
             }
 
@@ -530,15 +536,15 @@ public class Robot extends TimedRobot {
                         flapMotor.set(0.5);
                     } else {
                         flapMotor.set(0);
+                        CURRENTFLAPPOSITION = MID;
                     }
-                    CURRENTFLAPPOSITION = MID;
                 } else if (CURRENTFLAPPOSITION == DOWN) {
                     if (flapEncoder.get() < FLAPMIDTODOWN + CURRENTFLAPENCODER) {
                         flapMotor.set(-0.5);
                     } else {
                         flapMotor.set(0);
+
                     }
-                    CURRENTFLAPPOSITION = MID;
                 }
             }
 
@@ -549,15 +555,15 @@ public class Robot extends TimedRobot {
                         flapMotor.set(0.5);
                     } else {
                         flapMotor.set(0);
+                        CURRENTFLAPPOSITION = DOWN;
                     }
-                    CURRENTFLAPPOSITION = DOWN;
                 } else if (CURRENTFLAPPOSITION == MID) {
                     if (flapEncoder.get() < FLAPMIDTODOWN + CURRENTFLAPENCODER) {
                         flapMotor.set(-0.5);
                     } else {
                         flapMotor.set(0);
+                        CURRENTFLAPPOSITION = DOWN;
                     }
-                    CURRENTFLAPPOSITION = DOWN;
                 }
             }
         }
