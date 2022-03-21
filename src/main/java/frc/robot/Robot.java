@@ -108,6 +108,17 @@ public class Robot extends TimedRobot {
     double startFlapEncoder = 0;
     double desiredFlapEncoder = 0;
 
+    // FlapFlap constants
+    public static final double FLAPUPTOMID = 6;
+    public static final double FLAPMIDTODOWN = 8;
+    public static final double FLAPUPTODOWN = 14;
+    public double LIMELIGHTFLAP = 0; // limelight's desired flap position
+    public double CURRENTFLAPPOSITION = 0; // actual position of flap
+    public double CURRENTFLAPENCODER = 0;
+    public static final double UP = 1; // LIMELIGHTFLAP desired position
+    public static final double MID = 2; // LIMELIGHTFLAP desired position
+    public static final double DOWN = 3; // LIMELIGHTFLAP desired position
+
     // the autonomous garbage
     // public static final double CHASSISWHEELWIDTH = Units.inchesToMeters(20); //
     // inches but now meters
@@ -479,6 +490,78 @@ public class Robot extends TimedRobot {
         }
 
         return limelightShootingRPM;
+    }
+
+    public void flapFlap(double limelightDistance) {
+        if (limelightDistance <= CLOSEDISTANCE) {
+            LIMELIGHTFLAP = UP;
+        } else if (limelightDistance <= MIDDISTANCE) {
+            LIMELIGHTFLAP = MID;
+        } else if (limelightDistance <= FARDISTANCE) {
+            LIMELIGHTFLAP = DOWN;
+        }
+
+        if (CURRENTFLAPPOSITION != LIMELIGHTFLAP) {
+            CURRENTFLAPENCODER = flapEncoder.get();
+
+            // UP
+            if (LIMELIGHTFLAP == UP) {
+                if (CURRENTFLAPPOSITION == MID) {
+                    if (flapEncoder.get() < FLAPUPTOMID + CURRENTFLAPENCODER) {
+                        flapMotor.set(-0.5);
+                    } else {
+                        flapMotor.set(0);
+                    }
+                    CURRENTFLAPPOSITION = UP;
+                } else if (CURRENTFLAPPOSITION == DOWN) {
+                    if (flapEncoder.get() < FLAPUPTODOWN + CURRENTFLAPENCODER) {
+                        flapMotor.set(-0.5);
+                    } else {
+                        flapMotor.set(0);
+                    }
+                    CURRENTFLAPPOSITION = UP;
+                }
+            }
+
+            // MID
+            if (LIMELIGHTFLAP == MID) {
+                if (CURRENTFLAPPOSITION == UP) {
+                    if (flapEncoder.get() < FLAPUPTOMID + CURRENTFLAPENCODER) {
+                        flapMotor.set(0.5);
+                    } else {
+                        flapMotor.set(0);
+                    }
+                    CURRENTFLAPPOSITION = MID;
+                } else if (CURRENTFLAPPOSITION == DOWN) {
+                    if (flapEncoder.get() < FLAPMIDTODOWN + CURRENTFLAPENCODER) {
+                        flapMotor.set(-0.5);
+                    } else {
+                        flapMotor.set(0);
+                    }
+                    CURRENTFLAPPOSITION = MID;
+                }
+            }
+
+            // DOWN
+            if (LIMELIGHTFLAP == DOWN) {
+                if (CURRENTFLAPPOSITION == UP) {
+                    if (flapEncoder.get() < FLAPUPTODOWN + CURRENTFLAPENCODER) {
+                        flapMotor.set(0.5);
+                    } else {
+                        flapMotor.set(0);
+                    }
+                    CURRENTFLAPPOSITION = DOWN;
+                } else if (CURRENTFLAPPOSITION == MID) {
+                    if (flapEncoder.get() < FLAPMIDTODOWN + CURRENTFLAPENCODER) {
+                        flapMotor.set(-0.5);
+                    } else {
+                        flapMotor.set(0);
+                    }
+                    CURRENTFLAPPOSITION = DOWN;
+                }
+            }
+        }
+
     }
 
     public void flapAngleAdjustment(double limelightDistance) {
