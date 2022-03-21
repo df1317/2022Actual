@@ -497,6 +497,8 @@ public class Robot extends TimedRobot {
         return limelightShootingRPM;
     }
 
+    // Automatic Climber
+    // TODO: should there be a break after every case? since it adds 1 to the stage
     public void climbClimb(boolean climbFirstButton, boolean climbSecondButton, boolean climbThirdButton) {
         int climbStageFirst = 1;
         int climbStageSecond = 1;
