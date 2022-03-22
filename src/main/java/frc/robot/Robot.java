@@ -92,14 +92,6 @@ public class Robot extends TimedRobot {
     public static final double MIDDISTANCE = 174;
     public static final double FARDISTANCE = 228;
 
-    // ClimbClimb constants
-    public static final double ROTATETOGRAB = 30; // degrees
-    public static final double EXTENDMAX = 3000; // degrees
-    public static final double EXTENDSLIGHT = 30; // degrees
-    public static final double ROTATESLIGHT = 10; // degrees
-    public static final double ROTATETOVERTICAL = 25; // degrees
-    public static final double ROTATETOGRABSLIGHT = 25;
-
     // Flap constants TODO: remove me
     public static final double CLOSE_ANGLE = 0.0;
     public static final double MID_ANGLE = 5.158;
@@ -110,34 +102,14 @@ public class Robot extends TimedRobot {
     double desiredFlapEncoder = 0;
 
     // FlapFlap constants
-    public static final double FLAPUPTOMID = 6;
-    public static final double FLAPMIDTODOWN = 8;
-    public static final double FLAPUPTODOWN = 14;
-    public double LIMELIGHTFLAP = UP; // limelight's desired flap position
-    public double CURRENTFLAPPOSITION = UP; // actual position of flap
-    public double CURRENTFLAPENCODER = 0;
-    public static final double UP = 1; // LIMELIGHTFLAP desired position
-    public static final double MID = 2; // LIMELIGHTFLAP desired position
-    public static final double DOWN = 3; // LIMELIGHTFLAP desired position
-
-    // the autonomous garbage
-    // public static final double CHASSISWHEELWIDTH = Units.inchesToMeters(20); //
-    // inches but now meters
-    public static final double KSVOLTS = 0.22;
-    public static final double KVVOLTSECONDSPERMETER = 1.98;
-    public static final double KAVOLTSECONDSSQUAREDPERMETER = 0.2;
-    public static final double kMaxSpeedMetersPerSecond = 3;
-    public static final double kMaxAccelerationMetersPerSecondSquared = 3;
-
-    // Reasonable baseline values for a RAMSETE follower, meters & seconds
-    public static final double kRamseteB = 2;
-    public static final double kRamseteZeta = 0.7;
-    public static final double kPDriveVel = 8.5;
-    public static final int kEncoderCPR = 1024;
-    public static final double kWheelDiameterMeters = 0.15;
-    public static final double kEncoderDistancePerPulse =
-            // Assumes the encoders are directly mounted on the wheel shafts
-            (kWheelDiameterMeters * Math.PI) / (double) kEncoderCPR;
+    public static int FLAPUPTOMID = 140000;
+    public static int FLAPMIDTODOWN = 50000;
+    public int LIMELIGHTFLAP = UP; // limelight's desired flap position
+    public int CURRENTFLAPPOSITION = UP; // actual position of flap
+    public int CURRENTFLAPENCODER = 0;
+    public static final int UP = 1; // LIMELIGHTFLAP desired position
+    public static final int MID = 2; // LIMELIGHTFLAP desired position
+    public static final int DOWN = 3; // LIMELIGHTFLAP desired position
 
     // PID Coefficients: don't touch
     public static final double PID_P = .006; // was 0.01, better at .009
@@ -171,8 +143,8 @@ public class Robot extends TimedRobot {
 
     private final Counter flapEncoder = new Counter(new DigitalInput(9));
     private final RelativeEncoder shooterEncoder = shooterMotor.getEncoder();
-    private final Encoder articulatingEncoder = new Encoder(5, 6);
-    private final Encoder extendingEncoder = new Encoder(7, 8);
+    private final Encoder articulatingEncoder = new Encoder(7, 8);
+    private final Encoder extendingEncoder = new Encoder(5, 6);
     private final Encoder leftEncoder = new Encoder(1, 2, true); // inverted
     private final Encoder rightEncoder = new Encoder(3, 4, false); // not inverted
 
@@ -183,16 +155,10 @@ public class Robot extends TimedRobot {
     private final MotorControllerGroup leftMotorGroup = new MotorControllerGroup(frontLeftMotor, backLeftMotor);
     private final MotorControllerGroup rightMotorGroup = new MotorControllerGroup(frontRightMotor, backRightMotor);
     private final DifferentialDrive robotDrive = new DifferentialDrive(leftMotorGroup, rightMotorGroup);
-    // private final DriveSubsystem robotDriveSubsystem = new DriveSubsystem();
     private final MotorControllerGroup extendingClimbers = new MotorControllerGroup(topExtendingClimber,
             bottomExtendingClimber);
     private final MotorControllerGroup articulatingClimbers = new MotorControllerGroup(topArticulatingClimber,
             bottomArticulatingClimber);
-
-    // private final DifferentialDriveOdometry odometry = new
-    // DifferentialDriveOdometry(gyro.getRotation2d());
-    // private final DifferentialDriveKinematics kinematics = new
-    // DifferentialDriveKinematics(CHASSISWHEELWIDTH);
 
     // Limelight
     private NetworkTable table = NetworkTableInstance.getDefault().getTable("limelight");
@@ -226,73 +192,22 @@ public class Robot extends TimedRobot {
         shooterPID.setFF(PID_FF);
         shooterPID.setOutputRange(PID_MINOUTPUT, PID_MAXOUTPUT);
 
+        SmartDashboard.putNumber("FlapUpToMid", FLAPUPTOMID);
+        SmartDashboard.putNumber("FlapMidToDown", FLAPMIDTODOWN);
+
         resetEncoders();
     }
 
-    // public Command getAutonomousCommand() {
-
-    // // Create a voltage constraint to ensure we don't accelerate too fast
-    // var autoVoltageConstraint = new DifferentialDriveVoltageConstraint(
-    // new SimpleMotorFeedforward(
-    // Constants.KSVOLTS,
-    // Constants.KVVOLTSECONDSPERMETER,
-    // Constants.KAVOLTSECONDSSQUAREDPERMETER),
-    // kinematics,
-    // 10);
-
-    // // Create config for trajectory
-    // TrajectoryConfig config = new TrajectoryConfig(
-    // Constants.kMaxSpeedMetersPerSecond,
-    // Constants.kMaxAccelerationMetersPerSecondSquared)
-    // // Add kinematics to ensure max speed is actually obeyed
-    // .setKinematics(kinematics)
-    // // Apply the voltage constraint
-    // .addConstraint(autoVoltageConstraint);
-
-    // // An example trajectory to follow. All units in meters.
-    // Trajectory exampleTrajectory = TrajectoryGenerator.generateTrajectory(
-    // // Start at the origin facing the +X direction
-    // new Pose2d(0, 0, new Rotation2d(0)),
-    // // Pass through these two interior waypoints, making an 's' curve path
-    // List.of(new Translation2d(1, 1), new Translation2d(2, -1)),
-    // // End 3 meters straight ahead of where we started, facing forward
-    // new Pose2d(3, 0, new Rotation2d(0)),
-    // // Pass config
-    // config);
-
-    // RamseteCommand ramseteCommand = new RamseteCommand(exampleTrajectory,
-    // robotDriveSubsystem::getPose,
-    // new RamseteController(Constants.kRamseteB, Constants.kRamseteZeta),
-    // new SimpleMotorFeedforward(Constants.KSVOLTS,
-    // Constants.KVVOLTSECONDSPERMETER,
-    // Constants.KAVOLTSECONDSSQUAREDPERMETER),
-    // kinematics,
-    // robotDriveSubsystem::getWheelSpeeds,
-    // new PIDController(Constants.kPDriveVel, 0, 0), new
-    // PIDController(Constants.kPDriveVel, 0, 0),
-    // robotDriveSubsystem::tankDriveVolts, robotDriveSubsystem);
-
-    // // Reset odometry to the starting pose of the trajectory.
-    // robotDriveSubsystem.resetOdometry(exampleTrajectory.getInitialPose());
-
-    // // Run path following command, then stop at the end.
-    // return ramseteCommand.andThen(() -> robotDrive.tankDrive(0, 0));
-    // }
-
-    // double getHeading = gyro.getRotation2d().getDegrees();
-    // double getTurnRate = -gyro.getRate();
-
     @Override
     public void teleopInit() {
-
-        // How long the robot has been turned on when teleop is first enabled
-        // TODO: remove me
-        double teleopStartTime = Timer.getFPGATimestamp();
 
     }
 
     @Override
     public void teleopPeriodic() {
+
+        SmartDashboard.putNumber("Articulating Encoder", articulatingEncoder.get());
+        SmartDashboard.putNumber("Extending Encoder", extendingEncoder.get());
 
         // Set PID Coefficients
         shooterPID.setP(PID_P);
@@ -312,7 +227,6 @@ public class Robot extends TimedRobot {
         boolean hoodAdjustBackward = joyE.getRawButton(10);
         boolean ejectButtonL = joyL.getRawButton(3);
         boolean ejectButtonR = joyR.getRawButton(3);
-        boolean resetHoodDegreesTest = joyL.getRawButton(6);
         boolean stopFlap = joyE.getRawButton(5);
 
         // Limelight Buttons
@@ -324,11 +238,6 @@ public class Robot extends TimedRobot {
         boolean articulatingClimberButton = joyE.getRawButton(3);
         boolean windClimberButton = joyE.getRawButton(6);
         boolean unwindClimberButton = joyE.getRawButton(4);
-
-        // Automated Climber Buttons
-        boolean climbFirstButton = joyE.getRawButton(11);
-        boolean climbSecondButton = joyE.getRawButton(8);
-        boolean climbThirdButton = joyE.getRawButton(7);
 
         // Driving Variables
         double halfSpeed = 1;
@@ -345,9 +254,6 @@ public class Robot extends TimedRobot {
         double limelightDistance = calculateLimelightDistance(limelightTY);
         double desiredShooterRPM = calculateLimelightRPM(limelightDistance);
 
-        // TODO: uncomment me
-        // SmartDashboard.putBoolean("Valid Target?", limelightVALID);
-
         if (stopFlap) {
             flapMotor.set(0);
         }
@@ -355,11 +261,9 @@ public class Robot extends TimedRobot {
         // Hood Adjustment Manual
         if (hoodAdjustForward) {
             flapMotor.set(0.5);
-            // currentFlapAngle += flapEncoder.get();
             movingFlap = false;
         } else if (hoodAdjustBackward) {
             flapMotor.set(-0.5);
-            // currentFlapAngle -= flapEncoder.get();
             movingFlap = false;
         } else {
             if (!movingFlap) {
@@ -384,35 +288,28 @@ public class Robot extends TimedRobot {
             robotDrive.tankDrive(limelightLeftSteer, limelightRightSteer);
         }
 
+        // Automatic Flap Controls using Operator Trigger
+        doNewFlap(limelightShootButton, limelightDistance);
+
         // Shooting Motor Controls
         if (limelightShootButton) {
             // Sets shooting motor PID to limelight's calculated RPM value when enabled
             shooterPID.setReference(desiredShooterRPM,
                     CANSparkMax.ControlType.kVelocity);
-            flapFlap(limelightDistance);
-            // flapAngleAdjustment(limelightDistance);
-            /*
-             * if (!flapAdjusted) {
-             * // adjustLimelightFlapAngle(limelightDistance);
-             * flapAdjusted = true;
-             * }
-             */
         } else {
             if (!articulatingClimberButton && !windClimberButton && !unwindClimberButton) {
                 shooterPID.setReference(3000, CANSparkMax.ControlType.kVelocity);
             }
-            // flapAdjusted = false;
         }
 
         boolean RPMinRange = (Math.abs(desiredShooterRPM - shooterEncoder.getVelocity()) < 75);
 
-        // SmartDashboard Values for testing
-        // TODO: uncomment after flap testing
-        // SmartDashboard.putBoolean("RPM IN RANGE", RPMinRange);
-        // SmartDashboard.putNumber("Limelight Distance",
-        // calculateLimelightDistance(limelightTY));
-        // SmartDashboard.putNumber("Limelight RPM Value", desiredShooterRPM);
-        // SmartDashboard.putNumber("Actual RPM", shooterEncoder.getVelocity());
+        // SmartDashboard RPM Values
+        SmartDashboard.putBoolean("Valid Target?", limelightVALID);
+        SmartDashboard.putBoolean("RPM IN RANGE", RPMinRange);
+        SmartDashboard.putNumber("Limelight Distance", calculateLimelightDistance(limelightTY));
+        SmartDashboard.putNumber("Limelight RPM Value", desiredShooterRPM);
+        SmartDashboard.putNumber("Actual RPM", shooterEncoder.getVelocity());
 
         // Collection Controls
         if (initialCollectionLButton || initialCollectionRButton) {
@@ -429,14 +326,14 @@ public class Robot extends TimedRobot {
             bottomCollectorMotor.set(0);
         }
 
-        // Articulating Climber Controls [MANUAL]: operator buttons 5 & 3
+        // Articulating Climber Controls: operator buttons 5 & 3
         if (articulatingClimberButton) {
             articulatingClimbers.set(joyE.getY() * ARTCLIMBERSPEED);
             shooterMotor.set(0);
         } else {
             articulatingClimbers.set(0);
         }
-        // Extending Climber Winch Controls [MANUAL]: operator buttons 6 & 4
+        // Extending Climber Winch Controls: operator buttons 6 & 4
         if (windClimberButton) {
             extendingClimbers.set(EXTCLIMBERSPEED);
             shooterMotor.set(0);
@@ -497,263 +394,105 @@ public class Robot extends TimedRobot {
         return limelightShootingRPM;
     }
 
-    // Automatic Climber
-    // TODO: should there be a break after every case? since it adds 1 to the stage
-    public void climbClimb(boolean climbFirstButton, boolean climbSecondButton, boolean climbThirdButton) {
-        int climbStageFirst = 1;
-        int climbStageSecond = 1;
-        int climbStageThird = 1;
+    int climbStageFirst = 1;
+    int climbStageSecond = 1;
+    int climbStageThird = 1;
 
-        if (climbFirstButton) {
-            switch (climbStageFirst) {
-                case 1:
-                    if (extendingEncoder.get() < EXTENDMAX) {
-                        extendingClimbers.set(EXTCLIMBERSPEED);
-                    } else {
-                        extendingClimbers.set(0);
-                        climbStageFirst++;
-                    }
-                case 2:
-                    if (extendingEncoder.get() > 0) {
-                        extendingClimbers.set(-EXTCLIMBERSPEED);
-                    } else {
-                        extendingClimbers.set(0);
-                        climbStageFirst++;
-                    }
-                case 3:
-                    SmartDashboard.putBoolean("CLIMB 1", true);
-            }
+    public int curFlapPosition = UP;
+    public int goalFlapPosition = UP;
+    public int goalFlapEncoder = 0;
 
-        } else if (climbSecondButton) {
-            switch (climbStageSecond) {
-                case 1:
-                    if (extendingEncoder.get() < EXTENDSLIGHT) {
-                        extendingClimbers.set(EXTCLIMBERSPEED);
-                    } else {
-                        extendingClimbers.set(0);
-                        climbStageSecond++;
-                    }
-                case 2:
-                    if (articulatingEncoder.get() < ROTATETOGRAB) {
-                        articulatingClimbers.set(ARTCLIMBERSPEED);
-                    } else {
-                        articulatingClimbers.set(0);
-                        climbStageSecond++;
-                    }
-                case 3:
-                    if (extendingEncoder.get() < EXTENDMAX) {
-                        extendingClimbers.set(EXTCLIMBERSPEED);
-                    } else {
-                        extendingClimbers.set(0);
-                        climbStageSecond++;
-                    }
-                case 4:
-                    if (articulatingEncoder.get() < ROTATESLIGHT) {
-                        articulatingClimbers.set(ARTCLIMBERSPEED);
-                    } else {
-                        articulatingClimbers.set(0);
-                        climbStageSecond++;
-                    }
-                case 5:
-                    if (extendingEncoder.get() > 0) {
-                        extendingClimbers.set(-EXTCLIMBERSPEED);
-                    } else {
-                        extendingClimbers.set(0);
-                        climbStageSecond++;
-                    }
-                case 6:
-                    if (articulatingEncoder.get() > ROTATETOVERTICAL) {
-                        articulatingClimbers.set(-ARTCLIMBERSPEED);
-                    } else {
-                        articulatingClimbers.set(0);
-                        climbStageSecond++;
-                    }
-                case 7:
-                    SmartDashboard.putBoolean("CLIMB 2", true);
-            }
+    public void newFlap() {
+        if (curFlapPosition == goalFlapPosition)
+            return;
 
-        } else if (climbThirdButton) {
-            switch (climbStageThird) {
-                case 1:
-                    if (extendingEncoder.get() < EXTENDMAX) {
-                        extendingClimbers.set(EXTCLIMBERSPEED);
-                    } else {
-                        extendingClimbers.set(0);
-                        climbStageThird++;
-                    }
-                case 2:
-                    if (articulatingEncoder.get() < ROTATETOGRABSLIGHT) {
-                        articulatingClimbers.set(ARTCLIMBERSPEED);
-                    } else {
-                        articulatingClimbers.set(0);
-                        climbStageThird++;
-                    }
-                case 3:
-                    if (extendingEncoder.get() > 0) {
-                        extendingClimbers.set(-EXTCLIMBERSPEED);
-                    } else {
-                        extendingClimbers.set(0);
-                        climbStageThird++;
-                    }
-                case 4:
-                    if (articulatingEncoder.get() > ROTATETOVERTICAL) {
-                        articulatingClimbers.set(-ARTCLIMBERSPEED);
-                    } else {
-                        articulatingClimbers.set(0);
-                        climbStageThird++;
-                    }
-                case 5:
-                    SmartDashboard.putBoolean("Climb 3", true);
-            }
-        }
-    }
+        int curEncoder = flapEncoder.get();
 
-    public void flapFlap(double limelightDistance) {
-        // TODO: should i call currentflapencoder = encoder.get() here?
-        // so it's called once at the beginning of the method?
-        if (limelightDistance <= CLOSEDISTANCE) {
-            LIMELIGHTFLAP = UP;
-        } else if (limelightDistance <= MIDDISTANCE) {
-            LIMELIGHTFLAP = MID;
-        } else if (limelightDistance <= FARDISTANCE) {
-            LIMELIGHTFLAP = DOWN;
-        }
-
-        SmartDashboard.putBoolean("FLAP", CURRENTFLAPPOSITION == LIMELIGHTFLAP);
-
-        if (CURRENTFLAPPOSITION != LIMELIGHTFLAP) {
-            // Gets the current encoder value at the start of adjustment
-            CURRENTFLAPENCODER = flapEncoder.get();
-            SmartDashboard.putNumber("LIMELIGHTFLAP", LIMELIGHTFLAP);
-            SmartDashboard.putNumber("CURRENTFLAPPOSITION", CURRENTFLAPPOSITION);
-            SmartDashboard.putNumber("CURRENTFLAPENCODER", CURRENTFLAPENCODER);
-
-            // UP
-            if (LIMELIGHTFLAP == UP) {
-                if (CURRENTFLAPPOSITION == MID) {
-                    if (flapEncoder.get() < FLAPUPTOMID + CURRENTFLAPENCODER) {
-                        flapMotor.set(-0.5);
-                    } else {
-                        flapMotor.set(0);
-                        CURRENTFLAPPOSITION = UP;
-                    }
-                } else if (CURRENTFLAPPOSITION == DOWN) {
-                    if (flapEncoder.get() < FLAPUPTODOWN + CURRENTFLAPENCODER) {
-                        flapMotor.set(-0.5);
-                    } else {
-                        flapMotor.set(0);
-                        CURRENTFLAPPOSITION = UP;
-                    }
-                }
-            }
-
-            // MID
-            if (LIMELIGHTFLAP == MID) {
-                if (CURRENTFLAPPOSITION == UP) {
-                    if (flapEncoder.get() < FLAPUPTOMID + CURRENTFLAPENCODER) {
-                        flapMotor.set(0.5);
-                    } else {
-                        flapMotor.set(0);
-                        CURRENTFLAPPOSITION = MID;
-                    }
-                } else if (CURRENTFLAPPOSITION == DOWN) {
-                    if (flapEncoder.get() < FLAPMIDTODOWN + CURRENTFLAPENCODER) {
-                        flapMotor.set(-0.5);
-                    } else {
-                        flapMotor.set(0);
-
-                    }
-                }
-            }
-
-            // DOWN
-            if (LIMELIGHTFLAP == DOWN) {
-                if (CURRENTFLAPPOSITION == UP) {
-                    if (flapEncoder.get() < FLAPUPTODOWN + CURRENTFLAPENCODER) {
-                        flapMotor.set(0.5);
-                    } else {
-                        flapMotor.set(0);
-                        CURRENTFLAPPOSITION = DOWN;
-                    }
-                } else if (CURRENTFLAPPOSITION == MID) {
-                    if (flapEncoder.get() < FLAPMIDTODOWN + CURRENTFLAPENCODER) {
-                        flapMotor.set(-0.5);
-                    } else {
-                        flapMotor.set(0);
-                        CURRENTFLAPPOSITION = DOWN;
-                    }
-                }
-            }
-        }
-
-    }
-
-    public void flapAngleAdjustment(double limelightDistance) {
-        boolean flapDirection = flapEncoder.getDirection();
-        double flapGet = flapEncoder.get();
-
-        if (flapDirection && (flapGet != actualFlapAngle)) {
-            actualFlapAngle += flapEncoder.get();
-        } else if (!flapDirection && (flapGet != actualFlapAngle)) {
-            actualFlapAngle -= flapEncoder.get();
-        }
-
-        // SmartDashboard.putNumber("ActualFlapAngle", actualFlapAngle);
-        // SmartDashboard.putBoolean("FlapDirection", flapDirection);
-        // SmartDashboard.putNumber("FlapAngle", limelightFlapAngle);
-
-        if (limelightDistance <= CLOSEDISTANCE) {
-            limelightFlapAngle = CLOSE_ANGLE;
-        } else if (limelightDistance <= MIDDISTANCE) {
-            limelightFlapAngle = MID_ANGLE;
-        } else if (limelightDistance <= FARDISTANCE) {
-            limelightFlapAngle = FAR_ANGLE;
-        }
-
-        if (limelightFlapAngle > actualFlapAngle) {
-            flapMotor.set(0.5);
-        } else if (limelightFlapAngle < actualFlapAngle) {
-            flapMotor.set(-0.5);
-        } else {
+        if (curEncoder >= goalFlapEncoder) {
+            curFlapPosition = goalFlapPosition;
             flapMotor.set(0);
+        } else {
+            int sign = (goalFlapPosition > curFlapPosition) ? 1 : -1;
+            flapMotor.set(0.5 * sign);
         }
-
     }
 
-    public void adjustLimelightFlapAngle(double limelightDistance) {
-        if (movingFlap) {
-            flapMotion();
-        } else {
-            startFlapAngle = currentFlapAngle;
-            startFlapEncoder = flapEncoder.get();
-            int flapDirection = 1;
+    public void setDesiredFlapPosition(int desiredPosition) {
+        // Don't let goal position change if we're in the middle of movement
+        if (curFlapPosition != goalFlapPosition)
+            return;
 
-            if (limelightDistance <= CLOSEDISTANCE) {
-                desiredFlapAngle = CLOSE_ANGLE;
-            } else if (limelightDistance <= MIDDISTANCE) {
-                desiredFlapAngle = MID_ANGLE;
-            } else if (limelightDistance <= FARDISTANCE) {
-                desiredFlapAngle = FAR_ANGLE;
-            } else {
-                // System.out.println("NO DESIRED ANGLE");
-            }
-            // System.out.println("desired angle: " + desiredFlapAngle);
-            desiredFlapEncoder = startFlapEncoder + Math.abs(startFlapAngle -
-                    desiredFlapAngle);
-            if (startFlapAngle > desiredFlapAngle) {
-                flapDirection = -1;
-            } else {
-                flapDirection = 1;
-            }
-            // System.out.println("setting desired flap encoder to " + desiredFlapEncoder);
-            flapMotor.set(0.5 * flapDirection);
-            movingFlap = true;
+        // Don't do anything if desiredPosition is same as curPosition
+        if (curFlapPosition == desiredPosition)
+            return;
 
-            // SmartDashboard.putNumber("Current ANGLE", currentFlapAngle);
-            // SmartDashboard.putNumber("Desired ANGLE", desiredFlapAngle);
-            // SmartDashboard.putNumber("Start ENCODER", startFlapEncoder);
-            // SmartDashboard.putNumber("Desired ENCODER", desiredFlapEncoder);
+        // Don't allow an invalid goal position
+        if (desiredPosition != UP && desiredPosition != MID && desiredPosition != DOWN)
+            return;
+
+        int encoderDistance = 0;
+
+        // Figure out the distance the encoder must move to get from curFlapPosition to
+        // desiredPosition
+        if (curFlapPosition == UP) {
+            if (desiredPosition == MID) {
+                encoderDistance = FLAPUPTOMID;
+            } else if (desiredPosition == DOWN) {
+                encoderDistance = (FLAPUPTOMID + FLAPMIDTODOWN);
+            }
+        } else if (curFlapPosition == MID) {
+            if (desiredPosition == UP) {
+                encoderDistance = FLAPUPTOMID;
+            } else if (desiredPosition == DOWN) {
+                encoderDistance = FLAPMIDTODOWN;
+            }
+        } else if (curFlapPosition == DOWN) {
+            if (desiredPosition == UP) {
+                encoderDistance = (FLAPUPTOMID + FLAPMIDTODOWN) + 5000;
+            } else if (desiredPosition == MID) {
+                encoderDistance = FLAPMIDTODOWN;
+            }
         }
+
+        // Sanity check, shouldn't occur
+        if (encoderDistance == 0)
+            return;
+
+        goalFlapPosition = desiredPosition;
+        goalFlapEncoder = flapEncoder.get() + encoderDistance;
+    }
+
+    boolean flapToggleButtonLastPressed = false;
+
+    public void doNewFlap(boolean buttonPressed, double limelightDistance) {
+        if (buttonPressed) {
+            if (limelightDistance <= CLOSEDISTANCE) {
+                setDesiredFlapPosition(UP);
+            } else if (limelightDistance <= MIDDISTANCE) {
+                setDesiredFlapPosition(MID);
+            } else if (limelightDistance <= FARDISTANCE) {
+                setDesiredFlapPosition(DOWN);
+            }
+        }
+
+        SmartDashboard.putBoolean("FLAP SUCCESSFUL", curFlapPosition == goalFlapPosition);
+        SmartDashboard.putNumber("LIMELIGHTFLAP", goalFlapPosition);
+        SmartDashboard.putNumber("CURRENTFLAPPOSITION", curFlapPosition);
+        SmartDashboard.putNumber("CURRENTFLAPENCODER", flapEncoder.get());
+        /*
+         * if (joyL.getRawButton(5) && !flapToggleButtonLastPressed) {
+         * int pos = curFlapPosition;
+         * if (++pos > DOWN) {
+         * pos = UP;
+         * }
+         * 
+         * setDesiredFlapPosition(pos);
+         * }
+         */
+        // flapToggleButtonLastPressed = joyL.getRawButton(5);
+
+        // Move flap to goal position no matter what
+        newFlap();
     }
 
     public void configLimelight() {
@@ -773,18 +512,6 @@ public class Robot extends TimedRobot {
         flapEncoder.reset();
         articulatingEncoder.reset();
         extendingEncoder.reset();
-    }
-
-    public void flapMotion() {
-        // System.out.println("current: " + flapEncoder.get() + "; desired: " +
-        // desiredFlapEncoder);
-        if (flapEncoder.get() >= desiredFlapEncoder) {
-            flapMotor.set(0);
-            movingFlap = false;
-            System.out.println("stopping hood motion");
-            currentFlapAngle = desiredFlapAngle;
-        }
-        // System.out.println("flap encoder < desired");
     }
 
 }
