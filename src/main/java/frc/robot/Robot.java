@@ -23,10 +23,12 @@ add hood to limelight code, set up encoder values
 package frc.robot;
 
 import java.nio.file.attribute.FileStoreAttributeView;
+import java.text.CollationElementIterator;
 import java.util.List;
 import java.util.PrimitiveIterator;
 
 import javax.tools.ForwardingFileObject;
+import javax.xml.transform.OutputKeys;
 
 import com.ctre.phoenix.motorcontrol.can.WPI_VictorSPX;
 import com.fasterxml.jackson.databind.introspect.DefaultAccessorNamingStrategy.FirstCharBasedValidator;
@@ -69,6 +71,7 @@ import edu.wpi.first.networktables.NetworkTableInstance;
 import com.revrobotics.CANSparkMax;
 import com.revrobotics.CANSparkMaxLowLevel.MotorType;
 import com.revrobotics.SparkMaxRelativeEncoder;
+import com.revrobotics.CANSparkMax.ControlType;
 import com.revrobotics.RelativeEncoder;
 import com.revrobotics.SparkMaxPIDController;
 
@@ -167,14 +170,10 @@ public class Robot extends TimedRobot {
     double limelightLeftSteer = 0.0;
     double limelightRightSteer = 0.0;
 
-    // Flap Values
-    // TODO: remove
-    double desiredFlapAngle = MID_ANGLE;
-    double currentFlapAngle = 0.0;
-    boolean movingFlap = false;
-    boolean flapAdjusted = false;
-    double limelightFlapAngle = 0;
-    double actualFlapAngle = 0;
+    // Autonomous Variables
+    Timer autoTimer = new Timer();
+    double currentAutoTime = 0;
+    boolean okayToShoot = false;
 
     @Override
     public void robotInit() {
@@ -196,6 +195,56 @@ public class Robot extends TimedRobot {
         SmartDashboard.putNumber("FlapMidToDown", FLAPMIDTODOWN);
 
         resetEncoders();
+    }
+
+    public void autonomousInit() {
+        autoTimer.reset();
+        autoTimer.start();
+        okayToShoot = false;
+    }
+
+    public void autonomousPeriodic() {
+        currentAutoTime = autoTimer.get();
+        double limelightTX = table.getEntry("tx").getDouble(0);
+        double limelightTY = table.getEntry("ty").getDouble(0);
+        double time1 = 2.5;
+        double time2 = 3;
+        double time3 = 5;
+        double time4 = 8;
+
+        // Drives forward while running the collector
+        if (currentAutoTime > 0 && currentAutoTime < time1) {
+            robotDrive.tankDrive(1, 1);
+            topCollectorMotor.set(-TOPCOLLECTORSPEED);
+            bottomCollectorMotor.set(BOTTOMCOLLECTORSPEED);
+        }
+        // Turns 90 degrees counterclockwise
+        if (currentAutoTime > time1 && currentAutoTime < time2) {
+            robotDrive.tankDrive(-1, 1);
+            topCollectorMotor.set(0);
+            bottomCollectorMotor.set(0);
+        }
+        // Limelight alignment
+        if (currentAutoTime > time2 && currentAutoTime < time3) {
+            limelightSteeringAlign(limelightTX);
+        }
+        if (currentAutoTime > time3 && currentAutoTime < time4) {
+            double limelightDistance = calculateLimelightDistance(limelightTY);
+            double desiredShooterRPM = calculateLimelightRPM(limelightDistance);
+            shooterPID.setReference(desiredShooterRPM, ControlType.kVelocity);
+            okayToShoot = Math.abs(desiredShooterRPM - shooterEncoder.getVelocity()) < 75;
+            if (okayToShoot) {
+                bottomCollectorMotor.set(1);
+                topCollectorMotor.set(1);
+            }
+        }
+
+        if (currentAutoTime > time4) {
+            bottomCollectorMotor.set(0);
+            topCollectorMotor.set(0);
+            shooterMotor.set(0);
+            robotDrive.tankDrive(0, 0);
+        }
     }
 
     @Override
@@ -261,15 +310,10 @@ public class Robot extends TimedRobot {
         // Hood Adjustment Manual
         if (hoodAdjustForward) {
             flapMotor.set(0.5);
-            movingFlap = false;
         } else if (hoodAdjustBackward) {
             flapMotor.set(-0.5);
-            movingFlap = false;
-        } else {
-            if (!movingFlap) {
-                flapMotor.set(0);
-            }
         }
+
         // Fancy Ternary Operators heck yeah
         halfSpeed = halfsiesL || halfsiesR ? 0.75 : 1;
 
@@ -282,8 +326,8 @@ public class Robot extends TimedRobot {
 
         // Limelight Alignment Controls
         if (limelightAlignButtonL || limelightAlignButtonR) {
-            limelightLeftSteer = limelightSteeringAlign(limelightAlignButtonL, limelightAlignButtonR, limelightTX);
-            limelightRightSteer = limelightSteeringAlign(limelightAlignButtonL, limelightAlignButtonR, limelightTX);
+            limelightLeftSteer = limelightSteeringAlign(limelightTX);
+            limelightRightSteer = limelightSteeringAlign(limelightTX);
 
             robotDrive.tankDrive(limelightLeftSteer, limelightRightSteer);
         }
@@ -328,7 +372,7 @@ public class Robot extends TimedRobot {
 
         // Articulating Climber Controls: operator buttons 5 & 3
         if (articulatingClimberButton) {
-            articulatingClimbers.set(joyE.getY() * ARTCLIMBERSPEED);
+            articulatingClimbers.set(joyE.getY() * ARTCLIMBERSPEED * -1);
             shooterMotor.set(0);
         } else {
             articulatingClimbers.set(0);
@@ -346,8 +390,7 @@ public class Robot extends TimedRobot {
 
     }
 
-    public double limelightSteeringAlign(boolean limelightAlignButtonL, boolean limelightAlignButtonR,
-            double limelightTX) {
+    public double limelightSteeringAlign(double limelightTX) {
         limelightLeftSteer = 0.0;
         limelightRightSteer = 0.0;
 
