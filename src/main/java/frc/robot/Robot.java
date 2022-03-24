@@ -124,8 +124,8 @@ public class Robot extends TimedRobot {
     public static final double PID_MINOUTPUT = -1;
 
     // Joysticks
-    private final Joystick joyE = new Joystick(1);
-    private final Joystick joyL = new Joystick(0);
+    private final Joystick joyE = new Joystick(0);
+    private final Joystick joyL = new Joystick(1);
     private final Joystick joyR = new Joystick(2);
 
     // Motor Controllers
@@ -207,20 +207,25 @@ public class Robot extends TimedRobot {
         currentAutoTime = autoTimer.get();
         double limelightTX = table.getEntry("tx").getDouble(0);
         double limelightTY = table.getEntry("ty").getDouble(0);
-        double time1 = 2.5;
-        double time2 = 3;
-        double time3 = 5;
-        double time4 = 8;
+        double limelightTV = table.getEntry("tv").getDouble(0);
+        boolean limelightVALID = limelightTV > 0;
+
+        SmartDashboard.putBoolean("AUTO TARGET?", limelightVALID);
+
+        double time1 = 3;
+        double time2 = time1 + 5;
+        double time3 = time2 + 3;
+        double time4 = time3 + 4;
 
         // Drives forward while running the collector
         if (currentAutoTime > 0 && currentAutoTime < time1) {
-            robotDrive.tankDrive(1, 1);
+            robotDrive.tankDrive(-0.5, -0.5);
             topCollectorMotor.set(-TOPCOLLECTORSPEED);
             bottomCollectorMotor.set(BOTTOMCOLLECTORSPEED);
         }
-        // Turns 90 degrees counterclockwise
-        if (currentAutoTime > time1 && currentAutoTime < time2) {
-            robotDrive.tankDrive(-1, 1);
+        // Turns 90 degrees clockwise
+        if (currentAutoTime > time1 && currentAutoTime < time2 && !limelightVALID) {
+            robotDrive.tankDrive(-0.5, 0.5);
             topCollectorMotor.set(0);
             bottomCollectorMotor.set(0);
         }
@@ -231,6 +236,7 @@ public class Robot extends TimedRobot {
         if (currentAutoTime > time3 && currentAutoTime < time4) {
             double limelightDistance = calculateLimelightDistance(limelightTY);
             double desiredShooterRPM = calculateLimelightRPM(limelightDistance);
+            doNewFlap(limelightDistance);
             shooterPID.setReference(desiredShooterRPM, ControlType.kVelocity);
             okayToShoot = Math.abs(desiredShooterRPM - shooterEncoder.getVelocity()) < 75;
             if (okayToShoot) {
@@ -333,7 +339,7 @@ public class Robot extends TimedRobot {
         }
 
         // Automatic Flap Controls using Operator Trigger
-        doNewFlap(limelightShootButton, limelightDistance);
+        doNewFlap(limelightDistance);
 
         // Shooting Motor Controls
         if (limelightShootButton) {
@@ -437,9 +443,9 @@ public class Robot extends TimedRobot {
         return limelightShootingRPM;
     }
 
-    int climbStageFirst = 1;
-    int climbStageSecond = 1;
-    int climbStageThird = 1;
+    // int climbStageFirst = 1;
+    // int climbStageSecond = 1;
+    // int climbStageThird = 1;
 
     public int curFlapPosition = UP;
     public int goalFlapPosition = UP;
@@ -505,17 +511,15 @@ public class Robot extends TimedRobot {
         goalFlapEncoder = flapEncoder.get() + encoderDistance;
     }
 
-    boolean flapToggleButtonLastPressed = false;
+    // boolean flapToggleButtonLastPressed = false;
 
-    public void doNewFlap(boolean buttonPressed, double limelightDistance) {
-        if (buttonPressed) {
-            if (limelightDistance <= CLOSEDISTANCE) {
-                setDesiredFlapPosition(UP);
-            } else if (limelightDistance <= MIDDISTANCE) {
-                setDesiredFlapPosition(MID);
-            } else if (limelightDistance <= FARDISTANCE) {
-                setDesiredFlapPosition(DOWN);
-            }
+    public void doNewFlap(double limelightDistance) {
+        if (limelightDistance <= CLOSEDISTANCE) {
+            setDesiredFlapPosition(UP);
+        } else if (limelightDistance <= MIDDISTANCE) {
+            setDesiredFlapPosition(MID);
+        } else if (limelightDistance <= FARDISTANCE) {
+            setDesiredFlapPosition(DOWN);
         }
 
         SmartDashboard.putBoolean("FLAP SUCCESSFUL", curFlapPosition == goalFlapPosition);
