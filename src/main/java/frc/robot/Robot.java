@@ -123,6 +123,8 @@ public class Robot extends TimedRobot {
     public static final double PID_MAXOUTPUT = 1;
     public static final double PID_MINOUTPUT = -1;
 
+    public boolean dontShoot = false;
+
     // Joysticks
     private final Joystick joyE = new Joystick(0);
     private final Joystick joyL = new Joystick(1);
@@ -212,10 +214,10 @@ public class Robot extends TimedRobot {
 
         SmartDashboard.putBoolean("AUTO TARGET?", limelightVALID);
 
-        double time1 = 3;
+        double time1 = 4;
         double time2 = time1 + 5;
         double time3 = time2 + 3;
-        double time4 = time3 + 4;
+        double time4 = time3 + 3;
 
         // Drives forward while running the collector
         if (currentAutoTime > 0 && currentAutoTime < time1) {
@@ -283,6 +285,7 @@ public class Robot extends TimedRobot {
         boolean ejectButtonL = joyL.getRawButton(3);
         boolean ejectButtonR = joyR.getRawButton(3);
         boolean stopFlap = joyE.getRawButton(5);
+        boolean dontShootButton = joyE.getRawButton(11);
 
         // Limelight Buttons
         boolean limelightAlignButtonL = joyL.getRawButton(4);
@@ -347,7 +350,17 @@ public class Robot extends TimedRobot {
             shooterPID.setReference(desiredShooterRPM,
                     CANSparkMax.ControlType.kVelocity);
         } else {
-            if (!articulatingClimberButton && !windClimberButton && !unwindClimberButton) {
+            // Don't shoot toggle
+            if (dontShootButton && !dontShoot) {
+                dontShoot = true;
+            } else if (dontShootButton && dontShoot) {
+                dontShoot = false;
+            }
+
+            // Shooter motor toggle controls the robot
+            if (dontShoot) {
+                shooterMotor.set(0);
+            } else if (!articulatingClimberButton && !windClimberButton && !unwindClimberButton) {
                 shooterPID.setReference(3000, CANSparkMax.ControlType.kVelocity);
             }
         }
