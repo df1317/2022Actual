@@ -33,6 +33,8 @@ import javax.xml.transform.OutputKeys;
 import com.ctre.phoenix.motorcontrol.can.WPI_VictorSPX;
 import com.fasterxml.jackson.databind.introspect.DefaultAccessorNamingStrategy.FirstCharBasedValidator;
 
+import edu.wpi.first.wpilibj.util.*;
+
 import edu.wpi.first.wpilibj.Counter;
 import edu.wpi.first.wpilibj.DigitalInput;
 import edu.wpi.first.wpilibj.Encoder;
@@ -68,6 +70,8 @@ import edu.wpi.first.math.trajectory.constraint.DifferentialDriveVoltageConstrai
 import edu.wpi.first.networktables.NetworkTable;
 import edu.wpi.first.networktables.NetworkTableEntry;
 import edu.wpi.first.networktables.NetworkTableInstance;
+import edu.wpi.first.util.net.PortForwarder;
+
 import com.revrobotics.CANSparkMax;
 import com.revrobotics.CANSparkMaxLowLevel.MotorType;
 import com.revrobotics.SparkMaxRelativeEncoder;
@@ -95,15 +99,6 @@ public class Robot extends TimedRobot {
     public static final double MIDDISTANCE = 174;
     public static final double FARDISTANCE = 228;
 
-    // Flap constants TODO: remove me
-    public static final double CLOSE_ANGLE = 0.0;
-    public static final double MID_ANGLE = 5.158;
-    public static final double FAR_ANGLE = 16.453;
-    public static final double FLAP_DEADZONE = 0.01;
-    double startFlapAngle = 0;
-    double startFlapEncoder = 0;
-    double desiredFlapEncoder = 0;
-
     // FlapFlap constants
     public static int FLAPUPTOMID = 140000;
     public static int FLAPMIDTODOWN = 50000;
@@ -123,7 +118,17 @@ public class Robot extends TimedRobot {
     public static final double PID_MAXOUTPUT = 1;
     public static final double PID_MINOUTPUT = -1;
 
-    public boolean dontShoot = false;
+    public int curFlapPosition = UP;
+    public int goalFlapPosition = UP;
+    public int goalFlapEncoder = 0;
+
+    public boolean currentlyClimbing = false;
+
+    public double oneTime = 4;
+    public double twoTime = oneTime + 6.75;
+    public double threeTime = twoTime + 3;
+    public double fourTime = threeTime + 2;
+    public double autoRPM = 3700;
 
     // Joysticks
     private final Joystick joyE = new Joystick(0);
@@ -179,6 +184,17 @@ public class Robot extends TimedRobot {
 
     @Override
     public void robotInit() {
+        // PortForwarder.add(5800, "limelight.local", 5800);
+        // PortForwarder.add(5801, "limelight.local", 5801);
+        // PortForwarder.add(5802, "limelight.local", 5802);
+        // PortForwarder.add(5803, "limelight.local", 5803);
+        // PortForwarder.add(5804, "limelight.local", 5804);
+        // PortForwarder.add(5805, "limelight.local", 5805);
+        // PortForwarder.add(5806, "limelight.local", 5866);
+        // PortForwarder.add(5807, "limelight.local", 5807);
+        // PortForwarder.add(5808, "limelight.local", 5808);
+        // PortForwarder.add(5809, "limelight.local", 5809);
+
         CameraServer.startAutomaticCapture();
 
         configLimelight();
@@ -200,13 +216,44 @@ public class Robot extends TimedRobot {
     }
 
     public void autonomousInit() {
+        shooterPID.setReference(3400, ControlType.kVelocity);
+
         autoTimer.reset();
         autoTimer.start();
         okayToShoot = false;
+        curFlapPosition = UP;
+        goalFlapPosition = UP;
+        goalFlapEncoder = 0;
     }
 
     public void autonomousPeriodic() {
         currentAutoTime = autoTimer.get();
+
+        // Always at our desired RPM
+        // shooterPID.setReference(autoRPM, ControlType.kVelocity);
+        /*
+         * if (currentAutoTime > 0 && currentAutoTime < oneTime) {
+         * robotDrive.tankDrive(-0.55, -0.55);
+         * topCollectorMotor.set(-1);
+         * bottomCollectorMotor.set(1);
+         * }
+         * if (currentAutoTime > oneTime && currentAutoTime < twoTime) {
+         * robotDrive.tankDrive(-0.5, 0.5);
+         * topCollectorMotor.set(0);
+         * bottomCollectorMotor.set(0);
+         * }
+         * if (currentAutoTime > twoTime && currentAutoTime < threeTime) {
+         * // bottomCollectorMotor.set(1);
+         * // topCollectorMotor.set(1);
+         * robotDrive.tankDrive(0, 0);
+         * }
+         * if (currentAutoTime > fourTime) {
+         * bottomCollectorMotor.set(0);
+         * topCollectorMotor.set(0);
+         * robotDrive.tankDrive(0, 0);
+         * }
+         */
+
         double limelightTX = table.getEntry("tx").getDouble(0);
         double limelightTY = table.getEntry("ty").getDouble(0);
         double limelightTV = table.getEntry("tv").getDouble(0);
@@ -214,50 +261,86 @@ public class Robot extends TimedRobot {
 
         SmartDashboard.putBoolean("AUTO TARGET?", limelightVALID);
 
-        double time1 = 4;
+        double time1 = 3; // return to 4?
         double time2 = time1 + 5;
         double time3 = time2 + 3;
-        double time4 = time3 + 3;
+        double time4 = time3 + 1;
+        double time5 = time4 + 1;
 
+        // Sets idle RPM at 3000 until time 3
+        /*
+         * if (currentAutoTime < time3) {
+         * shooterPID.setReference(3400, ControlType.kVelocity);
+         * }
+         */
         // Drives forward while running the collector
         if (currentAutoTime > 0 && currentAutoTime < time1) {
-            robotDrive.tankDrive(-0.5, -0.5);
+            robotDrive.tankDrive(0.5, 0.5);
             topCollectorMotor.set(-TOPCOLLECTORSPEED);
             bottomCollectorMotor.set(BOTTOMCOLLECTORSPEED);
+        } else {
+            robotDrive.tankDrive(0, 0);
         }
-        // Turns 90 degrees clockwise
-        if (currentAutoTime > time1 && currentAutoTime < time2 && !limelightVALID) {
-            robotDrive.tankDrive(-0.5, 0.5);
-            topCollectorMotor.set(0);
-            bottomCollectorMotor.set(0);
-        }
-        // Limelight alignment
-        if (currentAutoTime > time2 && currentAutoTime < time3) {
-            limelightSteeringAlign(limelightTX);
-        }
-        if (currentAutoTime > time3 && currentAutoTime < time4) {
+        if (currentAutoTime > time1 && currentAutoTime < time4) {
             double limelightDistance = calculateLimelightDistance(limelightTY);
             double desiredShooterRPM = calculateLimelightRPM(limelightDistance);
-            doNewFlap(limelightDistance);
+            // doNewFlap(limelightDistance);
             shooterPID.setReference(desiredShooterRPM, ControlType.kVelocity);
             okayToShoot = Math.abs(desiredShooterRPM - shooterEncoder.getVelocity()) < 75;
             if (okayToShoot) {
                 bottomCollectorMotor.set(1);
                 topCollectorMotor.set(1);
             }
-        }
+        } /*
+           * else if ((currentAutoTime > time1 && currentAutoTime < time2)) {
+           * if (!limelightVALID) {
+           * // Turns ~180 degrees clockwise
+           * // TODO: unswithc negativves
+           * robotDrive.tankDrive(0.45, -0.45);
+           * topCollectorMotor.set(0);
+           * bottomCollectorMotor.set(0);
+           * } else {
+           * // Limelight alignment
+           * limelightSteeringAlign(limelightTX);
+           * limelightLeftSteer = (-limelightSteeringAlign(limelightTX) / 2);
+           * limelightRightSteer = (limelightSteeringAlign(limelightTX) / 2);
+           * robotDrive.tankDrive(limelightLeftSteer, limelightRightSteer);
+           * }
+           * } else if ((currentAutoTime > time3 && currentAutoTime < time4)) {
+           * robotDrive.tankDrive(0, 0);
+           */
 
-        if (currentAutoTime > time4) {
+        /*
+         * if (limelightVALID) {
+         * double limelightDistance = calculateLimelightDistance(limelightTY);
+         * double desiredShooterRPM = calculateLimelightRPM(limelightDistance);
+         * // doNewFlap(limelightDistance);
+         * shooterPID.setReference(desiredShooterRPM, ControlType.kVelocity);
+         * okayToShoot = Math.abs(desiredShooterRPM - shooterEncoder.getVelocity()) <
+         * 25;
+         * if (okayToShoot) {
+         * bottomCollectorMotor.set(1);
+         * topCollectorMotor.set(1);
+         * }
+         * }
+         */
+        if (currentAutoTime > time4 && currentAutoTime < time5) {
+            robotDrive.tankDrive(0, 0);
             bottomCollectorMotor.set(0);
             topCollectorMotor.set(0);
             shooterMotor.set(0);
-            robotDrive.tankDrive(0, 0);
+            // flapMotor.set(-0.5);
         }
+
     }
 
     @Override
     public void teleopInit() {
-
+        // flapMotor.set(0);
+        flapEncoder.reset();
+        curFlapPosition = UP;
+        goalFlapPosition = UP;
+        goalFlapEncoder = 0;
     }
 
     @Override
@@ -285,7 +368,7 @@ public class Robot extends TimedRobot {
         boolean ejectButtonL = joyL.getRawButton(3);
         boolean ejectButtonR = joyR.getRawButton(3);
         boolean stopFlap = joyE.getRawButton(5);
-        boolean dontShootButton = joyE.getRawButton(11);
+        boolean currentlyClimbingToggle = joyE.getRawButton(11);
 
         // Limelight Buttons
         boolean limelightAlignButtonL = joyL.getRawButton(4);
@@ -314,6 +397,8 @@ public class Robot extends TimedRobot {
 
         if (stopFlap) {
             flapMotor.set(0);
+            // remove me later please!!!!
+            flapEncoder.reset();
         }
 
         // Hood Adjustment Manual
@@ -321,6 +406,8 @@ public class Robot extends TimedRobot {
             flapMotor.set(0.5);
         } else if (hoodAdjustBackward) {
             flapMotor.set(-0.5);
+        } else {
+            flapMotor.set(0);
         }
 
         // Fancy Ternary Operators heck yeah
@@ -342,7 +429,7 @@ public class Robot extends TimedRobot {
         }
 
         // Automatic Flap Controls using Operator Trigger
-        doNewFlap(limelightDistance);
+        // doNewFlap(limelightDistance);
 
         // Shooting Motor Controls
         if (limelightShootButton) {
@@ -351,16 +438,18 @@ public class Robot extends TimedRobot {
                     CANSparkMax.ControlType.kVelocity);
         } else {
             // Don't shoot toggle
-            if (dontShootButton && !dontShoot) {
-                dontShoot = true;
-            } else if (dontShootButton && dontShoot) {
-                dontShoot = false;
+            if (currentlyClimbingToggle && !currentlyClimbing) {
+                currentlyClimbing = true;
+            } else if (currentlyClimbingToggle && currentlyClimbing) {
+                currentlyClimbing = false;
             }
 
+            SmartDashboard.putBoolean("SHOOTING ON", !currentlyClimbing);
+
             // Shooter motor toggle controls the robot
-            if (dontShoot) {
+            if (currentlyClimbing) {
                 shooterMotor.set(0);
-            } else if (!articulatingClimberButton && !windClimberButton && !unwindClimberButton) {
+            } else if (!limelightShootButton) {
                 shooterPID.setReference(3000, CANSparkMax.ControlType.kVelocity);
             }
         }
@@ -459,101 +548,104 @@ public class Robot extends TimedRobot {
     // int climbStageFirst = 1;
     // int climbStageSecond = 1;
     // int climbStageThird = 1;
-
-    public int curFlapPosition = UP;
-    public int goalFlapPosition = UP;
-    public int goalFlapEncoder = 0;
-
-    public void newFlap() {
-        if (curFlapPosition == goalFlapPosition)
-            return;
-
-        int curEncoder = flapEncoder.get();
-
-        if (curEncoder >= goalFlapEncoder) {
-            curFlapPosition = goalFlapPosition;
-            flapMotor.set(0);
-        } else {
-            int sign = (goalFlapPosition > curFlapPosition) ? 1 : -1;
-            flapMotor.set(0.5 * sign);
-        }
-    }
-
-    public void setDesiredFlapPosition(int desiredPosition) {
-        // Don't let goal position change if we're in the middle of movement
-        if (curFlapPosition != goalFlapPosition)
-            return;
-
-        // Don't do anything if desiredPosition is same as curPosition
-        if (curFlapPosition == desiredPosition)
-            return;
-
-        // Don't allow an invalid goal position
-        if (desiredPosition != UP && desiredPosition != MID && desiredPosition != DOWN)
-            return;
-
-        int encoderDistance = 0;
-
-        // Figure out the distance the encoder must move to get from curFlapPosition to
-        // desiredPosition
-        if (curFlapPosition == UP) {
-            if (desiredPosition == MID) {
-                encoderDistance = FLAPUPTOMID;
-            } else if (desiredPosition == DOWN) {
-                encoderDistance = (FLAPUPTOMID + FLAPMIDTODOWN);
-            }
-        } else if (curFlapPosition == MID) {
-            if (desiredPosition == UP) {
-                encoderDistance = FLAPUPTOMID;
-            } else if (desiredPosition == DOWN) {
-                encoderDistance = FLAPMIDTODOWN;
-            }
-        } else if (curFlapPosition == DOWN) {
-            if (desiredPosition == UP) {
-                encoderDistance = (FLAPUPTOMID + FLAPMIDTODOWN) + 5000;
-            } else if (desiredPosition == MID) {
-                encoderDistance = FLAPMIDTODOWN;
-            }
-        }
-
-        // Sanity check, shouldn't occur
-        if (encoderDistance == 0)
-            return;
-
-        goalFlapPosition = desiredPosition;
-        goalFlapEncoder = flapEncoder.get() + encoderDistance;
-    }
-
-    // boolean flapToggleButtonLastPressed = false;
-
-    public void doNewFlap(double limelightDistance) {
-        if (limelightDistance <= CLOSEDISTANCE) {
-            setDesiredFlapPosition(UP);
-        } else if (limelightDistance <= MIDDISTANCE) {
-            setDesiredFlapPosition(MID);
-        } else if (limelightDistance <= FARDISTANCE) {
-            setDesiredFlapPosition(DOWN);
-        }
-
-        SmartDashboard.putBoolean("FLAP SUCCESSFUL", curFlapPosition == goalFlapPosition);
-        SmartDashboard.putNumber("LIMELIGHTFLAP", goalFlapPosition);
-        SmartDashboard.putNumber("CURRENTFLAPPOSITION", curFlapPosition);
-        SmartDashboard.putNumber("CURRENTFLAPENCODER", flapEncoder.get());
-        /*
-         * if (joyL.getRawButton(5) && !flapToggleButtonLastPressed) {
-         * int pos = curFlapPosition;
-         * if (++pos > DOWN) {
-         * pos = UP;
-         * }
-         * 
-         * setDesiredFlapPosition(pos);
-         * }
-         */
-        // flapToggleButtonLastPressed = joyL.getRawButton(5);
-
-        // Move flap to goal position no matter what
-        newFlap();
-    }
+    /*
+     * public void newFlap() {
+     * if (curFlapPosition == goalFlapPosition)
+     * return;
+     * 
+     * int curEncoder = flapEncoder.get();
+     * 
+     * if (curEncoder >= goalFlapEncoder) {
+     * curFlapPosition = goalFlapPosition;
+     * flapMotor.set(0);
+     * } else {
+     * int sign = (goalFlapPosition > curFlapPosition) ? 1 : -1;
+     * flapMotor.set(0.5 * sign);
+     * }
+     * }
+     * 
+     * public void setDesiredFlapPosition(int desiredPosition) {
+     * // Don't let goal position change if we're in the middle of movement
+     * if (curFlapPosition != goalFlapPosition)
+     * return;
+     * 
+     * // Don't do anything if desiredPosition is same as curPosition
+     * if (curFlapPosition == desiredPosition)
+     * return;
+     * 
+     * // Don't allow an invalid goal position
+     * if (desiredPosition != UP && desiredPosition != MID && desiredPosition !=
+     * DOWN)
+     * return;
+     * 
+     * int encoderDistance = 0;
+     * 
+     * // Figure out the distance the encoder must move to get from curFlapPosition
+     * to
+     * // desiredPosition
+     * if (curFlapPosition == UP) {
+     * if (desiredPosition == MID) {
+     * encoderDistance = FLAPUPTOMID;
+     * } else if (desiredPosition == DOWN) {
+     * encoderDistance = (FLAPUPTOMID + FLAPMIDTODOWN);
+     * }
+     * } else if (curFlapPosition == MID) {
+     * if (desiredPosition == UP) {
+     * encoderDistance = FLAPUPTOMID;
+     * } else if (desiredPosition == DOWN) {
+     * encoderDistance = FLAPMIDTODOWN;
+     * }
+     * } else if (curFlapPosition == DOWN) {
+     * if (desiredPosition == UP) {
+     * encoderDistance = (FLAPUPTOMID + FLAPMIDTODOWN) + 5000;
+     * } else if (desiredPosition == MID) {
+     * encoderDistance = FLAPMIDTODOWN;
+     * }
+     * }
+     * 
+     * // Sanity check, shouldn't occur
+     * if (encoderDistance == 0)
+     * return;
+     * 
+     * goalFlapPosition = desiredPosition;
+     * goalFlapEncoder = flapEncoder.get() + encoderDistance;
+     * }
+     * 
+     * boolean flapToggleButtonLastPressed = false;
+     * 
+     * public void doNewFlap(double limelightDistance) {
+     * if (limelightDistance <= CLOSEDISTANCE) {
+     * goalFlapPosition = UP;
+     * } else if (limelightDistance <= MIDDISTANCE) {
+     * goalFlapPosition = MID;
+     * } else if (limelightDistance <= FARDISTANCE) {
+     * goalFlapPosition = DOWN;
+     * }
+     * 
+     * SmartDashboard.putNumber("DESIRED", goalFlapPosition);
+     * 
+     * // SmartDashboard.putBoolean("FLAP SUCCESSFUL", curFlapPosition ==
+     * // goalFlapPosition);
+     * // SmartDashboard.putNumber("LIMELIGHTFLAP", goalFlapPosition);
+     * // SmartDashboard.putNumber("CURRENTFLAPPOSITION", curFlapPosition);
+     * // SmartDashboard.putNumber("CURRENTFLAPENCODER", flapEncoder.get());
+     * 
+     * if (joyL.getRawButton(9) && !flapToggleButtonLastPressed) {
+     * int pos = curFlapPosition;
+     * if (++pos > DOWN) {
+     * pos = UP;
+     * }
+     * 
+     * SmartDashboard.putNumber("ACTUAL", pos);
+     * setDesiredFlapPosition(pos);
+     * }
+     * 
+     * flapToggleButtonLastPressed = joyL.getRawButton(9);
+     * 
+     * // Move flap to goal position no matter what
+     * newFlap();
+     * }
+     */
 
     public void configLimelight() {
         // Forces led on
